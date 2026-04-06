@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小艾老师 - 中点四边形课程</title>
+    <!-- 自动适配路径：本地或OSS部署 -->
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 左侧视频区域 -->
+        <div class="video-section">
+            <div class="video-header">
+                <h1>📚 中点四边形</h1>
+                <p>人教版数学八年级下册</p>
+            </div>
+            <div class="video-container">
+                <video id="courseVideo" controls preload="metadata">
+                    <source src="https://aiteacheryaohongyu.oss-cn-shanghai.aliyuncs.com/video.mp4" type="video/mp4">
+                    您的浏览器不支持视频播放，请更换浏览器。
+                </video>
+                <div class="video-overlay" id="videoOverlay">
+                    <div class="overlay-content">
+                        <h2>准备好开始学习了吗？</h2>
+                        <p>点击下方按钮，和小艾老师一起探索中点四边形的奥秘</p>
+                        <button class="start-btn" id="startBtn">开始学习</button>
+                    </div>
+                </div>
+            </div>
+            <div class="video-info">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="video-stats">
+                    <span id="currentTime">00:00</span>
+                    <span id="totalTime">00:00</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧聊天区域 -->
+        <div class="chat-section">
+            <div class="chat-header">
+                <div class="avatar">👩‍🏫</div>
+                <div class="header-info">
+                    <h2>小艾老师</h2>
+                    <span class="status">在线</span>
+                </div>
+            </div>
+            <div class="chat-messages" id="chatMessages">
+                <!-- 欢迎消息 -->
+                <div class="message bot-message">
+                    <div class="message-avatar">👩‍🏫</div>
+                    <div class="message-content">
+                        <p>同学你好！我是小艾老师，很高兴和你一起学习《中点四边形》这节课！</p>
+                        <p>点击左侧"开始学习"按钮，我们开始吧～</p>
+                    </div>
+                </div>
+            </div>
+            <div class="chat-input-area">
+                <textarea id="userInput" placeholder="输入你的问题或答案..." rows="2"></textarea>
+                <button class="send-btn" id="sendBtn">
+                    <span>发送</span>
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                        <path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载动画 -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <p>小艾老师正在思考中...</p>
+    </div>
+
+    <!-- 使用相对路径确保本地和服务器环境都能正确加载 -->
+    <script src="./main.js"></script>
+</body>
+</html>
