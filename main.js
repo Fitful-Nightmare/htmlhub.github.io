@@ -174,23 +174,40 @@ function formatMessage(content) {
     // 移除视频控制指令（不显示给学生看）
     // 匹配格式：[VIDEO:xxx|xxx|xxx] 或 [VIDEO:xxx|xxx|xxx（可能没有闭合括号）
     content = content.replace(/\[VIDEO:[^\]]*/g, '');
-    
+
     // 移除代码片段（过滤掉```代码块）
     content = content.replace(/```[\s\S]*?```/g, '[代码已隐藏]');
-    
+
     // 处理Markdown图片格式：![alt](url) -> <img src="url" alt="alt">
     content = content.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(match, alt, url) {
         // 如果是example.com的链接，不显示（这是示例链接）
         if (url.includes('example.com')) {
             return '';
         }
-        // 如果是真实的图片URL（https://www.coze.cn/s/...），显示图片
-        if (url.startsWith('https://')) {
+
+        // 处理本地图片文件（image.png, image_1.png等）
+        if (url.match(/^image[_\d]*\.png$/i)) {
             return '<img src="' + url + '" alt="' + alt + '" style="max-width: 100%; margin: 10px 0;">';
         }
+
+        // 如果是https://www.coze.cn/s/的链接，转换为图片文件名
+        const cozeImageMatch = url.match(/\/(Cx34uQIj3Rg|MA1Oc5DFQJI)/);
+        if (cozeImageMatch) {
+            const imageId = cozeImageMatch[1];
+            let imageName = '';
+            if (imageId === 'Cx34uQIj3Rg') {
+                imageName = 'image.png'; // 主习题
+            } else if (imageId === 'MA1Oc5DFQJI') {
+                imageName = 'image_1.png'; // 提高题
+            }
+            if (imageName) {
+                return '<img src="' + imageName + '" alt="' + alt + '" style="max-width: 100%; margin: 10px 0;">';
+            }
+        }
+
         return '';
     });
-    
+
     // 处理换行
     return content.replace(/\n/g, '<br>');
 }
@@ -508,4 +525,3 @@ function seekVideo(time) {
 // ==================== 页面加载提示 ====================
 console.log('小艾老师教学网页脚本已加载');
 console.log('Bot ID:', CONFIG.BOT_ID);
-
