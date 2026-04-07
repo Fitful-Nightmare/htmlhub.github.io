@@ -108,21 +108,8 @@ function bindEvents() {
                 video.pause();
                 updatePlayButtonState(false);
                 
-                // 显示暂停遮罩层
-                const videoOverlay = document.getElementById('videoOverlay');
-                if (videoOverlay) {
-                    videoOverlay.classList.remove('hidden');
-                    const overlayContent = videoOverlay.querySelector('.overlay-content');
-                    if (overlayContent) {
-                        overlayContent.querySelector('h2').textContent = '习题时间';
-                        overlayContent.querySelector('p').textContent = '请完成所有题目后继续';
-                        // 隐藏开始学习按钮
-                        const startBtn = overlayContent.querySelector('.start-btn');
-                        if (startBtn) {
-                            startBtn.style.display = 'none';
-                        }
-                    }
-                }
+                // ⚠️ 不显示暂停遮罩层，保持视频画面可见，方便学生看题
+                console.log('暂停视频，保持画面可见，不显示遮罩层');
             }
         });
     }
@@ -339,21 +326,7 @@ function executeVideoControl(control) {
         video.pause();
         updatePlayButtonState(false);
         
-        // 显示暂停遮罩层（不显示继续按钮）
-        const videoOverlay = document.getElementById('videoOverlay');
-        if (videoOverlay) {
-            videoOverlay.classList.remove('hidden');
-            const overlayContent = videoOverlay.querySelector('.overlay-content');
-            if (overlayContent) {
-                overlayContent.querySelector('h2').textContent = '习题时间';
-                overlayContent.querySelector('p').textContent = control.reason || '请完成所有题目后继续';
-                // 隐藏开始学习按钮（因为视频已暂停，等待Agent发送resume指令）
-                const startBtn = overlayContent.querySelector('.start-btn');
-                if (startBtn) {
-                    startBtn.style.display = 'none';
-                }
-            }
-        }
+        // ⚠️ 不显示暂停遮罩层，保持视频画面可见，方便学生看题
         console.log('视频暂停:', control.reason);
     } else if (control.action === 'jump') {
         video.currentTime = control.time;
@@ -473,6 +446,95 @@ async function callCozeAPI(message) {
             data = await response.json();
             console.log('API响应:', data);
             
+            // 🔍 保存完整响应用于调试
+            console.log('=== 完整API响应数据结构 ===');
+            console.log('响应类型:', typeof data);
+            console.log('响应keys:', Object.keys(data));
+            
+            // 🎯 关键修复：处理嵌套的响应结构 { code: 0, data: {...}, msg: "" }
+            if (data.code !== undefined && data.data) {
+                console.log('✅ 检测到嵌套响应结构: { code, data, msg }');
+                console.log('code:', data.code);
+                console.log('msg:', data.msg);
+                console.log('data:', data.data);
+                
+                // 检查 data 内部的结构
+                if (data.data) {
+                    console.log('data.keys:', Object.keys(data.data));
+                    
+                    // 尝试从 data.data.choices 获取
+                    if (data.data.choices && Array.isArray(data.data.choices) && data.data.choices.length > 0) {
+                        const messageObj = data.data.choices[0].message;
+                        if (messageObj && messageObj.content) {
+                            reply = messageObj.content;
+                            console.log('✅✅✅ 成功获取到回复内容（data.data.choices[0].message.content）');
+                            console.log('内容长度:', reply.length);
+                            
+                            // 保存 conversation_id
+                            if (data.data.conversation_id) {
+                                conversationId = data.data.conversation_id;
+                                console.log('已保存conversation_id:', conversationId);
+                            }
+                            break;
+                        }
+                    }
+                    
+                    // 尝试从 data.data.messages 获取
+                    if (data.data.messages && Array.isArray(data.data.messages) && data.data.messages.length > 0) {
+                        const lastMessage = data.data.messages[data.data.messages.length - 1];
+                        if (lastMessage && lastMessage.content) {
+                            reply = lastMessage.content;
+                            console.log('✅✅✅ 成功获取到回复内容（data.data.messages）');
+                            console.log('内容长度:', reply.length);
+                            break;
+                        }
+                    }
+                    
+                    // 尝试直接从 data.data.content 获取
+                    if (data.data.content && typeof data.data.content === 'string' && data.data.content.trim()) {
+                        reply = data.data.content;
+                        console.log('✅✅✅ 成功获取到回复内容（data.data.content）');
+                        console.log('内容长度:', reply.length);
+                        break;
+                    }
+                    
+                    // 尝试从 data.data.answer 获取
+                    if (data.data.answer && typeof data.data.answer === 'string' && data.data.answer.trim()) {
+                        reply = data.data.answer;
+                        console.log('✅✅✅ 成功获取到回复内容（data.data.answer）');
+                        console.log('内容长度:', reply.length);
+                        break;
+                    }
+                    
+                    // 尝试从 data.data.reply 获取
+                    if (data.data.reply && typeof data.data.reply === 'string' && data.data.reply.trim()) {
+                        reply = data.data.reply;
+                        console.log('✅✅✅ 成功获取到回复内容（data.data.reply）');
+                        console.log('内容长度:', reply.length);
+                        break;
+                    }
+                    
+                    // 检查 data.data 中的所有字符串字段
+                    console.log('检查 data.data 中的所有字符串字段...');
+                    for (const key in data.data) {
+                        if (typeof data.data[key] === 'string' && data.data[key].length > 10 && data.data[key].trim()) {
+                            console.log(`发现可能的回复字段: data.data.${key} = ${data.data[key].substring(0, 50)}...`);
+                            if (!reply) {
+                                reply = data.data[key];
+                                console.log(`✅✅✅ 成功获取到回复内容（data.data.${key}）`);
+                                console.log('内容长度:', reply.length);
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // 如果已经获取到回复，跳出轮询
+                if (reply) {
+                    break;
+                }
+            }
+            
             // 保存conversation_id（用于后续对话）
             if (data.conversation_id) {
                 conversationId = data.conversation_id;
@@ -481,7 +543,6 @@ async function callCozeAPI(message) {
             
             // 🔄 检查响应状态
             // 如果API仍在处理中，status可能为 "in_progress" 或类似状态
-            // 如果响应中有status字段且表示未完成，则继续轮询
             if (data.status === 'in_progress' || data.status === 'processing') {
                 console.log('API仍在处理中，继续轮询...');
                 
@@ -496,21 +557,86 @@ async function callCozeAPI(message) {
                 }
             }
             
-            // 提取回复内容
-            if (data.choices && data.choices.length > 0) {
+            // 📝 详细解析API响应结构
+            console.log('=== 开始解析API响应 ===');
+            
+            // 尝试1：data.choices[0].message.content（标准格式）
+            if (data.choices && Array.isArray(data.choices) && data.choices.length > 0) {
+                console.log('✅ 找到 data.choices');
+                console.log('choices[0]:', data.choices[0]);
                 const messageObj = data.choices[0].message;
-                if (messageObj && messageObj.content) {
-                    reply = messageObj.content;
-                    console.log('✅ 获取到回复内容');
+                if (messageObj) {
+                    console.log('message对象:', messageObj);
+                    if (messageObj.content) {
+                        reply = messageObj.content;
+                        console.log('✅✅✅ 成功获取到回复内容（data.choices[0].message.content）');
+                        console.log('内容长度:', reply.length);
+                        break;
+                    }
+                }
+            }
+            
+            // 尝试2：data.messages（可能的消息列表）
+            if (data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
+                console.log('✅ 找到 data.messages');
+                console.log('messages数量:', data.messages.length);
+                const lastMessage = data.messages[data.messages.length - 1];
+                console.log('最后一条消息:', lastMessage);
+                if (lastMessage && lastMessage.content) {
+                    reply = lastMessage.content;
+                    console.log('✅✅✅ 成功获取到回复内容（data.messages）');
+                    console.log('内容长度:', reply.length);
                     break;
                 }
             }
             
-            // 如果没有获取到内容，继续轮询
-            if (!reply && attempts < CONFIG.POLLING.maxAttempts) {
-                console.log('暂未获取到回复内容，继续轮询...');
-                await sleep(CONFIG.POLLING.interval);
+            // 尝试3：data.content（直接字段）
+            if (data.content && typeof data.content === 'string' && data.content.trim()) {
+                reply = data.content;
+                console.log('✅✅✅ 成功获取到回复内容（data.content）');
+                console.log('内容长度:', reply.length);
+                break;
             }
+            
+            // 尝试4：data.answer（答案字段）
+            if (data.answer && typeof data.answer === 'string' && data.answer.trim()) {
+                reply = data.answer;
+                console.log('✅✅✅ 成功获取到回复内容（data.answer）');
+                console.log('内容长度:', reply.length);
+                break;
+            }
+            
+            // 尝试5：data.reply（回复字段）
+            if (data.reply && typeof data.reply === 'string' && data.reply.trim()) {
+                reply = data.reply;
+                console.log('✅✅✅ 成功获取到回复内容（data.reply）');
+                console.log('内容长度:', reply.length);
+                break;
+            }
+            
+            // 尝试6：data.data.content（双重嵌套）
+            if (data.data && data.data.content && typeof data.data.content === 'string' && data.data.content.trim()) {
+                reply = data.data.content;
+                console.log('✅✅✅ 成功获取到回复内容（data.data.content）');
+                console.log('内容长度:', reply.length);
+                break;
+            }
+            
+            // 尝试7：检查所有可能的字符串字段
+            console.log('尝试检查所有可能的字符串字段...');
+            for (const key in data) {
+                if (typeof data[key] === 'string' && data[key].length > 10 && data[key].trim()) {
+                    console.log(`发现可能的回复字段: ${key} = ${data[key].substring(0, 50)}...`);
+                    if (!reply) {
+                        reply = data[key];
+                        console.log(`✅✅✅ 成功获取到回复内容（data.${key}）`);
+                        console.log('内容长度:', reply.length);
+                        break;
+                    }
+                }
+            }
+            
+            console.log('=== API响应解析完成 ===');
         }
         
         if (!reply) {
