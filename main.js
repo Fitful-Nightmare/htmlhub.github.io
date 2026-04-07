@@ -7,6 +7,8 @@ const CONFIG = {
 
     // 视频控制时间点（秒）
     VIDEO_PAUSE_TIME: 385,  // 6分25秒暂停（第一道测试题）
+    VIDEO_PAUSE_TIME_2: 390,  // 第二道测试题暂停时间
+    VIDEO_PAUSE_TIME_3: 395,  // 第三道测试题暂停时间
     VIDEO_JUMP_TIME: 152,   // 2分32秒跳转（特殊平行四边形的中点四边形）
 
     // 用户ID（可自定义）
@@ -21,6 +23,7 @@ let chatInput = null;
 let chatMessages = null;
 let conversationId = null;
 let hasStarted = false;
+let currentQuestion = 0;  // 当前题目编号（0表示不在题目阶段，1-3表示对应的题目）
 
 // ==================== 页面初始化 ====================
 document.addEventListener('DOMContentLoaded', function() {
@@ -79,17 +82,57 @@ function bindEvents() {
         });
     }
 
-    // 视频事件（仅用于调试，不做自动控制）
-    if (video) {
-        video.addEventListener('loadedmetadata', function() {
-            console.log('视频元数据加载完成，时长:', video.duration);
-        });
+    // 恢复视频进度监听，在题目时间点自动暂停并通知Agent
+video.addEventListener('timeupdate', function() {
+    const currentTime = Math.floor(video.currentTime);
+    
+    // 检查第一道测试题（385秒）
+    if (currentTime === CONFIG.VIDEO_PAUSE_TIME && currentQuestion === 0) {
+        currentQuestion = 1;
+        video.pause();
+        updatePlayButtonState(false);
+        console.log('到达第一道测试题位置，暂停视频并通知Agent');
+        // 通知Agent
+        notifyAgentPause(1);
+    }
+    
+    // 检查第二道测试题（时间待确认）
+    if (CONFIG.VIDEO_PAUSE_TIME_2 > 0 && 
+        currentTime === CONFIG.VIDEO_PAUSE_TIME_2 && 
+        currentQuestion === 1) {
+        currentQuestion = 2;
+        video.pause();
+        updatePlayButtonState(false);
+        console.log('到达第二道测试题位置，暂停视频并通知Agent');
+        notifyAgentPause(2);
+    }
+    
+    // 检查第三道测试题（时间待确认）
+    if (CONFIG.VIDEO_PAUSE_TIME_3 > 0 && 
+        currentTime === CONFIG.VIDEO_PAUSE_TIME_3 && 
+        currentQuestion === 2) {
+        currentQuestion = 3;
+        video.pause();
+        updatePlayButtonState(false);
+        console.log('到达第三道测试题位置，暂停视频并通知Agent');
+        notifyAgentPause(3);
+    }
+});
 
         video.addEventListener('canplay', function() {
             console.log('视频可以播放');
         });
 
         // 移除自动暂停逻辑，完全由Agent控制
+
+    async function notifyAgentPause(questionNum) {
+    const message = '视频已暂停在第' + questionNum + '道测试题处';
+    addMessage(message, 'user');
+    showLoading(true);
+    const reply = await callCozeAPI(message);
+    addMessage(reply, 'assistant');
+    showLoading(false);
+}
     }
 }
 
@@ -141,9 +184,16 @@ async function sendMessage() {
     }
 
     chatInput.value = '';
-    addMessage(message, 'user');
+    
+    // 如果视频正在播放，添加当前进度信息
+    let finalMessage = message;
+    if (video && !video.paused && currentQuestion > 0) {
+        finalMessage = message + '（当前视频进度：' + Math.floor(video.currentTime) + '秒）';
+    }
+    
+    addMessage(finalMessage, 'user');
     showLoading(true);
-    const reply = await callCozeAPI(message);
+    const reply = await callCozeAPI(finalMessage);
     addMessage(reply, 'assistant');
     showLoading(false);
 }
