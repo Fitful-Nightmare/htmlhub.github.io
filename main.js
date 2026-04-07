@@ -5,6 +5,15 @@ const CONFIG = {
     API_TOKEN: 'pat_Lky4npo9KhdjkggnB2i6gotKbfY7DlzCjZbATBhqv1YbUXD1g81F7TXt5UCA83OG',
     BOT_ID: '7625443699455557674',
     
+    // 🔄 轮询配置（解决API响应延迟问题）
+    // API响应时间约5秒，需要通过轮询等待响应完成
+    POLLING: {
+        enabled: true,          // 启用轮询
+        interval: 1000,          // 轮询间隔：1秒
+        maxAttempts: 40,        // 最大轮询次数：40次（总共等待40秒）
+        checkInterval: 1000      // 每次轮询等待1秒
+    },
+    
     // 视频控制时间点（秒）
     VIDEO_PAUSE_TIME: 385,  // 6分25秒暂停（第一道测试题）
     VIDEO_JUMP_TIME: 152,   // 2分32秒跳转（特殊平行四边形的中点四边形）
@@ -409,7 +418,7 @@ function showLoading(show) {
     }
 }
 
-// ==================== 调用扣子API ====================
+// ==================== 调用扣子API（带轮询机制）====================
 async function callCozeAPI(message) {
     try {
         console.log('发送消息到扣子API:', message);
@@ -426,50 +435,100 @@ async function callCozeAPI(message) {
             body.conversation_id = conversationId;
         }
         
-        const response = await fetch(CONFIG.API_URL, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${CONFIG.API_TOKEN}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            body: JSON.stringify(body)
-        });
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('API请求失败:', response.status, errorText);
-            throw new Error(`API请求失败: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        console.log('API响应:', data);
-        
-        // 保存conversation_id（用于后续对话）
-        if (data.conversation_id) {
-            conversationId = data.conversation_id;
-            console.log('已保存conversation_id:', conversationId);
-        }
-        
-        // 提取回复内容（使用正确的响应结构）
+        // 🔄 使用轮询机制等待API响应完成
+        let attempts = 0;
+        let data = null;
         let reply = '';
-        if (data.choices && data.choices.length > 0) {
-            const message = data.choices[0].message;
-            if (message && message.content) {
-                reply = message.content;
+        
+        while (attempts < CONFIG.POLLING.maxAttempts) {
+            attempts++;
+            console.log(`轮询尝试 ${attempts}/${CONFIG.POLLING.maxAttempts}...`);
+            
+            const response = await fetch(CONFIG.API_URL, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${CONFIG.API_TOKEN}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(body)
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`API请求失败（尝试 ${attempts}）:`, response.status, errorText);
+                
+                // 如果是429（请求过多）或5xx错误，等待后重试
+                if (response.status === 429 || response.status >= 500) {
+                    if (attempts < CONFIG.POLLING.maxAttempts) {
+                        console.log(`等待 ${CONFIG.POLLING.interval}ms 后重试...`);
+                        await sleep(CONFIG.POLLING.interval);
+                        continue;
+                    }
+                }
+                
+                throw new Error(`API请求失败: ${response.status}`);
+            }
+            
+            data = await response.json();
+            console.log('API响应:', data);
+            
+            // 保存conversation_id（用于后续对话）
+            if (data.conversation_id) {
+                conversationId = data.conversation_id;
+                console.log('已保存conversation_id:', conversationId);
+            }
+            
+            // 🔄 检查响应状态
+            // 如果API仍在处理中，status可能为 "in_progress" 或类似状态
+            // 如果响应中有status字段且表示未完成，则继续轮询
+            if (data.status === 'in_progress' || data.status === 'processing') {
+                console.log('API仍在处理中，继续轮询...');
+                
+                if (attempts < CONFIG.POLLING.maxAttempts) {
+                    // 更新conversation_id用于下一次查询
+                    if (data.conversation_id) {
+                        body.conversation_id = data.conversation_id;
+                    }
+                    
+                    await sleep(CONFIG.POLLING.interval);
+                    continue;
+                }
+            }
+            
+            // 提取回复内容
+            if (data.choices && data.choices.length > 0) {
+                const messageObj = data.choices[0].message;
+                if (messageObj && messageObj.content) {
+                    reply = messageObj.content;
+                    console.log('✅ 获取到回复内容');
+                    break;
+                }
+            }
+            
+            // 如果没有获取到内容，继续轮询
+            if (!reply && attempts < CONFIG.POLLING.maxAttempts) {
+                console.log('暂未获取到回复内容，继续轮询...');
+                await sleep(CONFIG.POLLING.interval);
             }
         }
         
         if (!reply) {
-            console.warn('未找到有效的回复内容');
+            console.warn('轮询结束，未找到有效的回复内容');
             reply = '抱歉，我暂时无法回复。请稍后再试。';
         }
         
         console.log('提取的回复内容:', reply);
+        console.log(`轮询完成，共尝试 ${attempts} 次`);
         return reply;
         
     } catch (error) {
         console.error('调用扣子API时发生错误:', error);
         return '抱歉，出现了网络错误。请检查网络连接后重试。';
     }
+}
+
+// ==================== 辅助函数：延迟 ====================
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
