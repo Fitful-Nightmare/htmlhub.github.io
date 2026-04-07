@@ -83,6 +83,7 @@ function bindEvents() {
     if (video) {
         video.addEventListener('loadedmetadata', function() {
             console.log('视频元数据加载完成，时长:', video.duration);
+            updateProgressUI();
         });
         
         video.addEventListener('canplay', function() {
@@ -90,9 +91,56 @@ function bindEvents() {
         });
         
         video.addEventListener('timeupdate', function() {
-            // 视频播放进度监控
+            // 视频播放进度监控，更新进度条
+            updateProgressUI();
+        });
+        
+        video.addEventListener('play', function() {
+            console.log('视频开始播放');
+            updatePlayButtonState(true);
+        });
+        
+        video.addEventListener('pause', function() {
+            console.log('视频暂停');
+            updatePlayButtonState(false);
+        });
+        
+        video.addEventListener('ended', function() {
+            console.log('视频播放结束');
+            updatePlayButtonState(false);
         });
     }
+}
+
+// ==================== 更新进度条UI ====================
+function updateProgressUI() {
+    if (!video || !video.duration) return;
+    
+    const progressFill = document.getElementById('progressFill');
+    const currentTimeDisplay = document.getElementById('currentTime');
+    const durationDisplay = document.getElementById('duration');
+    
+    // 更新进度条
+    if (progressFill) {
+        const percentage = (video.currentTime / video.duration) * 100;
+        progressFill.style.width = percentage + '%';
+    }
+    
+    // 更新时间显示
+    if (currentTimeDisplay) {
+        currentTimeDisplay.textContent = formatTime(video.currentTime);
+    }
+    
+    if (durationDisplay) {
+        durationDisplay.textContent = formatTime(video.duration);
+    }
+}
+
+// ==================== 格式化时间显示 ====================
+function formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return minutes + ':' + (secs < 10 ? '0' : '') + secs;
 }
 
 // ==================== 开始学习 ====================
@@ -219,6 +267,7 @@ function executeVideoControl(control) {
         updatePlayButtonState(true);
         console.log('视频跳转至', control.time, '秒:', control.reason);
     } else if (control.action === 'play') {
+        // 如果指定了时间点，跳转到该时间点
         if (control.time > 0) {
             video.currentTime = control.time;
         }
@@ -233,6 +282,7 @@ function updatePlayButtonState(isPlaying) {
     const playBtn = document.getElementById('playPauseBtn');
     const videoOverlay = document.getElementById('videoOverlay');
     
+    // 更新播放/暂停按钮图标
     if (playBtn) {
         if (isPlaying) {
             playBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
@@ -241,7 +291,7 @@ function updatePlayButtonState(isPlaying) {
         }
     }
     
-    // 隐藏遮罩层
+    // 确保视频遮罩层隐藏
     if (videoOverlay && isPlaying) {
         videoOverlay.classList.add('hidden');
     }
