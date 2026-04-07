@@ -104,6 +104,12 @@ function startLearning() {
     
     hasStarted = true;
     
+    // 隐藏视频遮罩层
+    const videoOverlay = document.getElementById('videoOverlay');
+    if (videoOverlay) {
+        videoOverlay.classList.add('hidden');
+    }
+    
     // 播放视频
     if (video) {
         console.log('尝试播放视频...');
@@ -153,12 +159,92 @@ function addMessage(content, role) {
     messageDiv.innerHTML = '<div class="message-content">' + formatMessage(content) + '</div>';
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // 如果是AI回复，检查是否有视频控制指令
+    if (role === 'assistant') {
+        const videoControl = parseVideoControl(content);
+        if (videoControl) {
+            executeVideoControl(videoControl);
+        }
+    }
 }
 
 // ==================== 格式化消息内容 ====================
 function formatMessage(content) {
+    // 移除视频控制指令（不显示给学生看）
+    // 匹配格式：[VIDEO:xxx|xxx|xxx] 或 [VIDEO:xxx|xxx|xxx（可能没有闭合括号）
+    content = content.replace(/\[VIDEO:[^\]]*/g, '');
+    
+    // 移除代码片段（过滤掉```代码块）
+    content = content.replace(/```[\s\S]*?```/g, '[代码已隐藏]');
+    
     // 处理换行
     return content.replace(/\n/g, '<br>');
+}
+
+// ==================== 解析视频控制指令 ====================
+function parseVideoControl(content) {
+    // 匹配格式：[VIDEO:pause|350|原因]
+    const pauseMatch = content.match(/\[VIDEO:pause\|(\d+)\|([^\]]*)\]/);
+    if (pauseMatch) {
+        return { action: 'pause', time: parseInt(pauseMatch[1]), reason: pauseMatch[2] };
+    }
+    
+    // 匹配格式：[VIDEO:jump|251|原因]
+    const jumpMatch = content.match(/\[VIDEO:jump\|(\d+)\|([^\]]*)\]/);
+    if (jumpMatch) {
+        return { action: 'jump', time: parseInt(jumpMatch[1]), reason: jumpMatch[2] };
+    }
+    
+    // 匹配格式：[VIDEO:play|0|原因]（播放视频）
+    const playMatch = content.match(/\[VIDEO:play\|(\d+)\|([^\]]*)\]/);
+    if (playMatch) {
+        return { action: 'play', time: parseInt(playMatch[1]), reason: playMatch[2] };
+    }
+    
+    return null;
+}
+
+// ==================== 执行视频控制 ====================
+function executeVideoControl(control) {
+    if (!control || !video) return;
+    
+    if (control.action === 'pause') {
+        video.pause();
+        updatePlayButtonState(false);
+        console.log('视频暂停:', control.reason);
+    } else if (control.action === 'jump') {
+        video.currentTime = control.time;
+        video.play();
+        updatePlayButtonState(true);
+        console.log('视频跳转至', control.time, '秒:', control.reason);
+    } else if (control.action === 'play') {
+        if (control.time > 0) {
+            video.currentTime = control.time;
+        }
+        video.play();
+        updatePlayButtonState(true);
+        console.log('视频播放:', control.reason);
+    }
+}
+
+// ==================== 更新播放按钮状态 ====================
+function updatePlayButtonState(isPlaying) {
+    const playBtn = document.getElementById('playPauseBtn');
+    const videoOverlay = document.getElementById('videoOverlay');
+    
+    if (playBtn) {
+        if (isPlaying) {
+            playBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+        } else {
+            playBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>';
+        }
+    }
+    
+    // 隐藏遮罩层
+    if (videoOverlay && isPlaying) {
+        videoOverlay.classList.add('hidden');
+    }
 }
 
 // ==================== 显示/隐藏加载状态 ====================
@@ -254,8 +340,8 @@ async function callCozeAPI(userMessage) {
 
 // ==================== 轮询获取结果 ====================
 async function pollForResult(chatId) {
-    const maxPolls = 30; // 最多轮询30次
-    const pollInterval = 1500; // 每次间隔1.5秒
+    const maxPolls = 40; // 最多轮询40次
+    const pollInterval = 1000; // 每次间隔1秒
     
     for (let i = 0; i < maxPolls; i++) {
         console.log('轮询第 ' + (i + 1) + ' 次，chatId: ' + chatId);
