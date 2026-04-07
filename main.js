@@ -91,6 +91,30 @@ function bindEvents() {
         
         video.addEventListener('timeupdate', function() {
             // 视频播放进度监控
+            const currentTime = video.currentTime;
+            
+            // 检查是否到达第一道测试题暂停时间点（385秒 = 6分25秒）
+            if (currentTime >= CONFIG.VIDEO_PAUSE_TIME && !video.paused) {
+                console.log('到达第一道测试题时间点，暂停视频');
+                video.pause();
+                updatePlayButtonState(false);
+                
+                // 显示暂停遮罩层
+                const videoOverlay = document.getElementById('videoOverlay');
+                if (videoOverlay) {
+                    videoOverlay.classList.remove('hidden');
+                    const overlayContent = videoOverlay.querySelector('.overlay-content');
+                    if (overlayContent) {
+                        overlayContent.querySelector('h2').textContent = '习题时间';
+                        overlayContent.querySelector('p').textContent = '请完成所有题目后继续';
+                        // 隐藏开始学习按钮
+                        const startBtn = overlayContent.querySelector('.start-btn');
+                        if (startBtn) {
+                            startBtn.style.display = 'none';
+                        }
+                    }
+                }
+            }
         });
     }
 }
@@ -147,7 +171,11 @@ async function sendMessage() {
     addMessage(message, 'user');
     showLoading(true);
     
-    const reply = await callCozeAPI(message);
+    // 📺 添加视频进度信息到消息中
+    const videoProgress = video ? video.currentTime : 0;
+    const enhancedMessage = `[视频进度:${videoProgress.toFixed(1)}秒] ${message}`;
+    
+    const reply = await callCozeAPI(enhancedMessage);
     addMessage(reply, 'assistant');
     showLoading(false);
 }
@@ -232,6 +260,10 @@ function formatMessage(content) {
         console.log('已移除视频控制指令');
     }
 
+    // 移除视频进度信息（不显示给学生看）
+    // 匹配格式：[视频进度:XXX.X秒]
+    content = content.replace(/\[视频进度:[^\]]+\]/g, '');
+    
     // 移除代码片段（过滤掉```代码块）
     content = content.replace(/```[\s\S]*?```/g, '[代码已隐藏]');
 
@@ -275,7 +307,13 @@ function parseVideoControl(content) {
         return { action: 'jump', time: parseInt(jumpMatch[1]), reason: jumpMatch[2] };
     }
     
-    // 匹配格式：[VIDEO:resume]（恢复播放）
+    // 匹配格式：[VIDEO:play|时间|原因]（播放到指定时间点）
+    const playMatch = content.match(/\[VIDEO:play\|(\d+)\|([^\]]*)\]/);
+    if (playMatch) {
+        return { action: 'play', time: parseInt(playMatch[1]), reason: playMatch[2] };
+    }
+    
+    // 匹配格式：[VIDEO:resume]（恢复播放，不跳转）
     const resumeMatch = content.match(/\[VIDEO:resume\]/);
     if (resumeMatch) {
         return { action: 'resume' };
@@ -319,6 +357,18 @@ function executeVideoControl(control) {
             videoOverlay.classList.add('hidden');
         }
         console.log('视频跳转至', control.time, '秒:', control.reason);
+    } else if (control.action === 'play') {
+        // 跳转到指定时间点并播放
+        video.currentTime = control.time;
+        video.play();
+        updatePlayButtonState(true);
+        
+        // 隐藏遮罩层
+        const videoOverlay = document.getElementById('videoOverlay');
+        if (videoOverlay) {
+            videoOverlay.classList.add('hidden');
+        }
+        console.log('视频跳转至', control.time, '秒并播放:', control.reason);
     } else if (control.action === 'resume') {
         // 恢复视频播放（由Agent发送resume指令触发）
         video.play();
@@ -330,280 +380,83 @@ function executeVideoControl(control) {
             videoOverlay.classList.add('hidden');
         }
         console.log('视频恢复播放');
-    } else if (control.action === 'play') {
-        if (control.time > 0) {
-            video.currentTime = control.time;
-        }
-        video.play();
-        updatePlayButtonState(true);
-        console.log('视频播放:', control.reason);
     }
 }
 
 // ==================== 更新播放按钮状态 ====================
 function updatePlayButtonState(isPlaying) {
-    const playBtn = document.getElementById('playPauseBtn');
-    const videoOverlay = document.getElementById('videoOverlay');
-    
-    if (playBtn) {
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    if (playPauseBtn) {
         if (isPlaying) {
-            playBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+            playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
+            playPauseBtn.title = '暂停';
         } else {
-            playBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>';
+            playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
+            playPauseBtn.title = '播放';
         }
-    }
-    
-    // 隐藏遮罩层
-    if (videoOverlay && isPlaying) {
-        videoOverlay.classList.add('hidden');
     }
 }
 
 // ==================== 显示/隐藏加载状态 ====================
 function showLoading(show) {
-    const loadingDiv = document.getElementById('loadingIndicator');
-    if (loadingDiv) {
-        loadingDiv.style.display = show ? 'block' : 'none';
-    }
-    
-    if (sendBtn) {
-        sendBtn.disabled = show;
+    const loading = document.getElementById('loading');
+    if (loading) {
+        if (show) {
+            loading.classList.remove('hidden');
+        } else {
+            loading.classList.add('hidden');
+        }
     }
 }
 
 // ==================== 调用扣子API ====================
-async function callCozeAPI(userMessage) {
+async function callCozeAPI(message) {
     try {
-        console.log('调用API，消息:', userMessage);
-        
-        const requestBody = {
-            bot_id: CONFIG.BOT_ID,
-            user_id: CONFIG.USER_ID,
-            stream: false,
-            auto_save_history: true,
-            additional_messages: [
-                {
-                    role: 'user',
-                    content: userMessage,
-                    content_type: 'text'
-                }
-            ]
-        };
-        
-        // 如果有会话ID，添加到请求中
-        if (conversationId) {
-            requestBody.conversation_id = conversationId;
-        }
-        
-        console.log('请求体:', JSON.stringify(requestBody, null, 2));
+        console.log('发送消息到扣子API:', message);
         
         const response = await fetch(CONFIG.API_URL, {
             method: 'POST',
             headers: {
-                'Authorization': 'Bearer ' + CONFIG.API_TOKEN,
-                'Content-Type': 'application/json'
+                'Authorization': `Bearer ${CONFIG.API_TOKEN}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             },
-            body: JSON.stringify(requestBody)
-        });
-        
-        console.log('响应状态:', response.status);
-        
-        if (!response.ok) {
-            throw new Error('API请求失败: ' + response.status);
-        }
-        
-        const result = await response.json();
-        console.log('API响应:', result);
-        
-        // 保存会话ID
-        if (result.data && result.data.conversation_id) {
-            conversationId = result.data.conversation_id;
-            console.log('保存会话ID:', conversationId);
-        }
-        
-        // 获取chat_id
-        const chatId = result.data && result.data.id;
-        
-        // 检查状态
-        if (result.data && result.data.status === 'in_progress') {
-            console.log('AI正在生成回复，开始轮询...');
-            return await pollForResult(chatId);
-        }
-        
-        // 如果状态是completed，直接解析响应
-        if (result.data && result.data.status === 'completed') {
-            return extractReplyContent(result);
-        }
-        
-        // 尝试直接解析（兼容其他格式）
-        return extractReplyContent(result);
-        
-    } catch (error) {
-        showLoading(false);
-        console.error('API调用错误:', error);
-        
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-            return '网络连接失败，可能是跨域问题。请尝试：\n1. 使用Vercel部署\n2. 或使用浏览器插件临时允许跨域';
-        }
-        
-        return '抱歉，小艾老师遇到了一些问题：' + error.message;
-    }
-}
-
-// ==================== 轮询获取结果 ====================
-async function pollForResult(chatId) {
-    const maxPolls = 40; // 最多轮询40次
-    const pollInterval = 1000; // 每次间隔1秒
-    
-    for (let i = 0; i < maxPolls; i++) {
-        console.log('轮询第 ' + (i + 1) + ' 次，chatId: ' + chatId);
-        
-        await new Promise(function(resolve) {
-            setTimeout(resolve, pollInterval);
-        });
-        
-        try {
-            // 第一步：GET请求查询对话状态
-            const pollUrl = 'https://api.coze.cn/v3/chat/retrieve?conversation_id=' + conversationId + '&chat_id=' + chatId;
-            
-            const response = await fetch(pollUrl, {
-                method: 'GET',
-                headers: {
-                    'Authorization': 'Bearer ' + CONFIG.API_TOKEN,
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            if (!response.ok) {
-                console.error('轮询请求失败:', response.status);
-                continue;
-            }
-            
-            const result = await response.json();
-            console.log('轮询响应:', JSON.stringify(result, null, 2));
-            
-            if (result.data && result.data.status === 'completed') {
-                // 第二步：GET请求获取消息列表
-                return await getMessageList(chatId);
-            }
-            
-            if (result.data && result.data.status === 'failed') {
-                showLoading(false);
-                return '抱歉，AI处理失败，请稍后再试。';
-            }
-        } catch (error) {
-            console.error('轮询错误:', error);
-        }
-    }
-    
-    showLoading(false);
-    return '抱歉，AI回复超时，请稍后再试。';
-}
-
-// ==================== 获取消息列表 ====================
-async function getMessageList(chatId) {
-    try {
-        const messageUrl = 'https://api.coze.cn/v3/chat/message/list?conversation_id=' + conversationId + '&chat_id=' + chatId;
-        
-        const response = await fetch(messageUrl, {
-            method: 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + CONFIG.API_TOKEN,
-                'Content-Type': 'application/json'
-            }
+            body: JSON.stringify({
+                bot_id: CONFIG.BOT_ID,
+                user_id: CONFIG.USER_ID,
+                query: message,
+                stream: false
+            })
         });
         
         if (!response.ok) {
-            console.error('获取消息列表失败:', response.status);
-            showLoading(false);
-            return '获取回复失败，请稍后再试。';
+            const errorText = await response.text();
+            console.error('API请求失败:', response.status, errorText);
+            throw new Error(`API请求失败: ${response.status}`);
         }
         
-        const result = await response.json();
-        console.log('消息列表响应:', JSON.stringify(result, null, 2));
+        const data = await response.json();
+        console.log('API响应:', data);
         
-        showLoading(false);
-        
-        // 解析消息列表，查找type=answer的消息
-        if (result.data && Array.isArray(result.data)) {
-            for (let i = 0; i < result.data.length; i++) {
-                const msg = result.data[i];
-                if (msg.type === 'answer' && msg.content) {
-                    return msg.content;
-                }
+        // 提取回复内容
+        let reply = '';
+        if (data.messages && data.messages.length > 0) {
+            const lastMessage = data.messages[data.messages.length - 1];
+            if (lastMessage.type === 'answer') {
+                reply = lastMessage.content;
             }
         }
         
-        return '收到回复，但未找到有效内容。';
+        if (!reply) {
+            console.warn('未找到有效的回复内容');
+            reply = '抱歉，我暂时无法回复。请稍后再试。';
+        }
+        
+        console.log('提取的回复内容:', reply);
+        return reply;
+        
     } catch (error) {
-        console.error('获取消息列表错误:', error);
-        showLoading(false);
-        return '获取回复时出错，请稍后再试。';
+        console.error('调用扣子API时发生错误:', error);
+        return '抱歉，出现了网络错误。请检查网络连接后重试。';
     }
 }
-
-// ==================== 提取回复内容 ====================
-function extractReplyContent(result) {
-    let replyContent = null;
-    
-    // 格式1: data.messages数组中有assistant的answer
-    if (result.data && result.data.messages && Array.isArray(result.data.messages)) {
-        for (let i = 0; i < result.data.messages.length; i++) {
-            const msg = result.data.messages[i];
-            if (msg.role === 'assistant' && msg.type === 'answer') {
-                replyContent = msg.content;
-                break;
-            }
-        }
-    }
-    
-    // 格式2: data.content
-    if (!replyContent && result.data && result.data.content) {
-        replyContent = result.data.content;
-    }
-    
-    // 格式3: data.answer
-    if (!replyContent && result.data && result.data.answer) {
-        replyContent = result.data.answer;
-    }
-    
-    // 格式4: result.content
-    if (!replyContent && result.content) {
-        replyContent = result.content;
-    }
-    
-    // 格式5: result.answer
-    if (!replyContent && result.answer) {
-        replyContent = result.answer;
-    }
-    
-    if (replyContent) {
-        return replyContent;
-    }
-    
-    console.error('无法解析API响应，完整数据:', JSON.stringify(result, null, 2));
-    return '收到回复，但无法解析内容。请查看浏览器控制台(F12)获取详细日志。';
-}
-
-// ==================== 视频控制 ====================
-function pauseVideo() {
-    if (video) {
-        video.pause();
-    }
-}
-
-function playVideo() {
-    if (video) {
-        video.play();
-    }
-}
-
-function seekVideo(time) {
-    if (video) {
-        video.currentTime = time;
-    }
-}
-
-// ==================== 页面加载提示 ====================
-console.log('小艾老师教学网页脚本已加载');
-console.log('Bot ID:', CONFIG.BOT_ID);
