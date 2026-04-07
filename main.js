@@ -185,24 +185,22 @@ function formatMessage(content) {
             return '';
         }
 
-        // 处理本地图片文件（image.png, image_1.png等）
+        // 处理本地图片文件（image.png, image_1.png等）- 转换为Coze URL
         if (url.match(/^image[_\d]*\.png$/i)) {
-            return '<img src="' + url + '" alt="' + alt + '" style="max-width: 100%; margin: 10px 0;">';
+            // 映射关系：使用正确的 Coze URL
+            const imageMap = {
+                'image.png': 'https://www.coze.cn/s/Cx34uQIj3Rg/?width_height=515x326',
+                'image_1.png': 'https://www.coze.cn/s/MA1Oc5DFQJI/?width_height=534x356'
+            };
+            const cozeUrl = imageMap[url];
+            if (cozeUrl) {
+                return '<img src="' + cozeUrl + '" alt="' + alt + '" style="max-width: 100%; margin: 10px 0;">';
+            }
         }
 
-        // 如果是https://www.coze.cn/s/的链接，转换为图片文件名
-        const cozeImageMatch = url.match(/\/(Cx34uQIj3Rg|MA1Oc5DFQJI)/);
-        if (cozeImageMatch) {
-            const imageId = cozeImageMatch[1];
-            let imageName = '';
-            if (imageId === 'Cx34uQIj3Rg') {
-                imageName = 'image.png'; // 主习题
-            } else if (imageId === 'MA1Oc5DFQJI') {
-                imageName = 'image_1.png'; // 提高题
-            }
-            if (imageName) {
-                return '<img src="' + imageName + '" alt="' + alt + '" style="max-width: 100%; margin: 10px 0;">';
-            }
+        // 如果是https://www.coze.cn/s/的链接，直接使用
+        if (url.startsWith('https://www.coze.cn/s/')) {
+            return '<img src="' + url + '" alt="' + alt + '" style="max-width: 100%; margin: 10px 0;">';
         }
 
         return '';
