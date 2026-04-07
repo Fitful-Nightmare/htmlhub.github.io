@@ -6,6 +6,7 @@
 // 4. ✅ 图片加载失败处理和 URL 大小写修正
 // 5. ✅ 详细的调试日志
 // 6. ✅ 视频控制和交互逻辑
+// 7. ✅ 正确的元素 ID 引用（与 index.html 匹配）
 
 // ==================== 配置信息 ====================
 const CONFIG = {
@@ -146,17 +147,21 @@ function addMessage(role, content) {
     messageDiv.className = `message ${role}-message`;
 
     const avatar = document.createElement('div');
-    avatar.className = 'avatar';
+    avatar.className = 'message-avatar';
     
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
 
     if (role === 'assistant') {
-        avatar.innerHTML = '📚';
+        avatar.innerHTML = '👩‍🏫';
         contentDiv.innerHTML = formatMessage(content);
-    } else {
+    } else if (role === 'user') {
         avatar.innerHTML = '👤';
         contentDiv.textContent = content;
+    } else {
+        // 默认使用机器人头像
+        avatar.innerHTML = '👩‍🏫';
+        contentDiv.innerHTML = formatMessage(content);
     }
 
     messageDiv.appendChild(avatar);
@@ -288,7 +293,7 @@ async function callCozeAPI(userMessage) {
 function executeVideoControl(control) {
     console.log('执行视频控制指令:', control);
 
-    const video = document.getElementById('videoPlayer');
+    const video = document.getElementById('courseVideo');
     if (!video) {
         console.error('找不到视频播放器');
         return;
@@ -296,12 +301,10 @@ function executeVideoControl(control) {
 
     if (control.action === 'pause') {
         video.pause();
-        updatePlayButtonState(false);
         console.log('视频暂停:', control.reason);
     } else if (control.action === 'jump') {
         video.currentTime = control.time;
         video.play();
-        updatePlayButtonState(true);
         console.log('视频跳转到', control.time, '秒:', control.reason);
     }
 }
@@ -320,17 +323,9 @@ function parseVideoControl(content) {
     return null;
 }
 
-// ==================== 更新播放按钮状态 ====================
-function updatePlayButtonState(isPlaying) {
-    const playButton = document.getElementById('playButton');
-    if (playButton) {
-        playButton.innerHTML = isPlaying ? '⏸️ 暂停' : '▶️ 播放';
-    }
-}
-
 // ==================== 发送消息处理 ====================
 async function handleSendMessage() {
-    const messageInput = document.getElementById('messageInput');
+    const messageInput = document.getElementById('chatInput');
     const message = messageInput.value.trim();
     
     if (!message) return;
@@ -364,7 +359,7 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('页面加载完成，开始初始化...');
 
     // 绑定发送按钮事件
-    const sendButton = document.getElementById('sendButton');
+    const sendButton = document.getElementById('sendBtn');
     if (sendButton) {
         sendButton.addEventListener('click', handleSendMessage);
         console.log('✅ 发送按钮事件已绑定');
@@ -373,10 +368,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // 绑定回车键发送事件
-    const messageInput = document.getElementById('messageInput');
+    const messageInput = document.getElementById('chatInput');
     if (messageInput) {
         messageInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault(); // 防止换行
                 handleSendMessage();
             }
         });
@@ -385,43 +381,80 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error('❌ 找不到消息输入框');
     }
 
-    // 视频控制
-    const video = document.getElementById('videoPlayer');
-    if (video) {
-        // 视频播放/暂停按钮
-        const playButton = document.getElementById('playButton');
-        if (playButton) {
-            playButton.addEventListener('click', function() {
-                if (video.paused) {
-                    video.play();
-                } else {
-                    video.pause();
+    // 绑定开始学习按钮事件
+    const startButton = document.getElementById('startBtn');
+    if (startButton) {
+        startButton.addEventListener('click', function() {
+            const video = document.getElementById('courseVideo');
+            if (video) {
+                video.play();
+                // 隐藏视频遮罩层
+                const overlay = document.getElementById('videoOverlay');
+                if (overlay) {
+                    overlay.style.display = 'none';
                 }
-            });
-            console.log('✅ 播放按钮事件已绑定');
-        }
+                console.log('✅ 开始学习按钮已点击，视频开始播放');
+            } else {
+                console.error('❌ 找不到视频播放器');
+            }
+        });
+        console.log('✅ 开始学习按钮事件已绑定');
+    } else {
+        console.error('❌ 找不到开始学习按钮');
+    }
 
+    // 视频控制
+    const video = document.getElementById('courseVideo');
+    if (video) {
         // 视频播放状态更新
         video.addEventListener('play', function() {
-            updatePlayButtonState(true);
+            console.log('视频开始播放');
         });
 
         video.addEventListener('pause', function() {
-            updatePlayButtonState(false);
+            console.log('视频暂停');
         });
 
         // 视频进度更新（用于触发暂停）
         video.addEventListener('timeupdate', function() {
             const currentTime = video.currentTime;
-            console.log('视频播放进度:', currentTime, '秒');
+            console.log('视频播放进度:', currentTime.toFixed(2), '秒');
 
             // 检查是否到达暂停时间点
             if (currentTime >= CONFIG.VIDEO_PAUSE_TIME && !video.paused) {
                 video.pause();
-                updatePlayButtonState(false);
                 console.log('到达暂停时间点', CONFIG.VIDEO_PAUSE_TIME, '秒，暂停视频');
             }
         });
+
+        // 更新播放时间显示
+        const currentTimeSpan = document.getElementById('currentTime');
+        const totalTimeSpan = document.getElementById('totalTime');
+        
+        if (currentTimeSpan) {
+            video.addEventListener('timeupdate', function() {
+                const currentMinutes = Math.floor(video.currentTime / 60);
+                const currentSeconds = Math.floor(video.currentTime % 60);
+                currentTimeSpan.textContent = `${currentMinutes.toString().padStart(2, '0')}:${currentSeconds.toString().padStart(2, '0')}`;
+            });
+        }
+        
+        if (totalTimeSpan) {
+            video.addEventListener('loadedmetadata', function() {
+                const totalMinutes = Math.floor(video.duration / 60);
+                const totalSeconds = Math.floor(video.duration % 60);
+                totalTimeSpan.textContent = `${totalMinutes.toString().padStart(2, '0')}:${totalSeconds.toString().padStart(2, '0')}`;
+            });
+        }
+        
+        // 更新进度条
+        const progressFill = document.getElementById('progressFill');
+        if (progressFill) {
+            video.addEventListener('timeupdate', function() {
+                const progress = (video.currentTime / video.duration) * 100;
+                progressFill.style.width = `${progress}%`;
+            });
+        }
 
         console.log('✅ 视频事件监听器已绑定');
     } else {
