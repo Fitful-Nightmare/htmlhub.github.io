@@ -1,20 +1,7 @@
 // ==================== 配置区域 ====================
 const CONFIG = {
-    // 扣子API配置 - 根据环境自动选择
-    get API_URL() {
-        const hostname = window.location.hostname;
-        // OSS环境：由于跨域限制，API调用会失败，需要用户通过Vercel部署
-        if (hostname.includes('oss')) {
-            console.warn('⚠️ OSS环境无法直接调用API，建议部署到Vercel');
-            return 'https://api.coze.cn/v3/chat'; // 尝试直接调用（可能被CORS阻止）
-        }
-        // Vercel环境：使用代理路径
-        if (hostname.includes('vercel') || hostname.includes('localhost')) {
-            return '/api/coze/v3/chat';
-        }
-        // 其他环境
-        return 'https://api.coze.cn/v3/chat';
-    },
+    // 扣子API配置
+    API_URL: 'https://api.coze.cn/v3/chat',
     API_TOKEN: 'pat_Lky4npo9KhdjkggnB2i6gotKbfY7DlzCjZbATBhqv1YbUXD1g81F7TXt5UCA83OG',
     BOT_ID: '7625443699455557674',
     
@@ -28,57 +15,36 @@ const CONFIG = {
 
 // ==================== 全局变量 ====================
 let video = null;
-let chatMessages = null;
-let userInput = null;
-let sendBtn = null;
-let loadingOverlay = null;
-let videoOverlay = null;
 let startBtn = null;
-let progressFill = null;
-let currentTimeEl = null;
-let totalTimeEl = null;
-
-let isVideoPaused = false;
-let hasTriggeredExercise = false;
+let sendBtn = null;
+let chatInput = null;
+let chatMessages = null;
 let conversationId = null;
+let hasStarted = false;
 
-// ==================== 初始化 ====================
+// ==================== 页面初始化 ====================
 document.addEventListener('DOMContentLoaded', function() {
     console.log('页面加载完成，开始初始化...');
     
     // 获取DOM元素
     video = document.getElementById('courseVideo');
-    chatMessages = document.getElementById('chatMessages');
-    userInput = document.getElementById('userInput');
-    sendBtn = document.getElementById('sendBtn');
-    loadingOverlay = document.getElementById('loadingOverlay');
-    videoOverlay = document.getElementById('videoOverlay');
     startBtn = document.getElementById('startBtn');
-    progressFill = document.getElementById('progressFill');
-    currentTimeEl = document.getElementById('currentTime');
-    totalTimeEl = document.getElementById('totalTime');
+    sendBtn = document.getElementById('sendBtn');
+    chatInput = document.getElementById('chatInput');
+    chatMessages = document.getElementById('chatMessages');
     
-    // 检查元素是否获取成功
     console.log('视频元素:', video);
     console.log('开始学习按钮:', startBtn);
     console.log('发送按钮:', sendBtn);
     
-    // 动态设置视频源 - 统一使用OSS在线视频
+    // 设置视频源（OSS在线链接）
     if (video) {
-        const videoSource = document.createElement('source');
-        
-        // 所有环境统一使用OSS视频链接，确保网页独立可运行
-        videoSource.src = 'https://aiteacheryaohongyu.oss-cn-shanghai.aliyuncs.com/video.mp4';
-        videoSource.type = 'video/mp4';
-        video.appendChild(videoSource);
-        console.log('已设置视频源（OSS在线）:', videoSource.src);
+        video.src = 'https://aiteacheryaohongyu.oss-cn-shanghai.aliyuncs.com/video.mp4';
+        console.log('已设置视频源（OSS在线）:', video.src);
     }
     
     // 绑定事件
     bindEvents();
-    
-    // 初始化视频
-    initVideo();
     
     console.log('初始化完成');
 });
@@ -89,47 +55,25 @@ function bindEvents() {
     
     // 开始学习按钮
     if (startBtn) {
-        startBtn.onclick = function(e) {
+        startBtn.addEventListener('click', function() {
             console.log('点击了开始学习按钮');
-            e.preventDefault();
-            
-            if (videoOverlay) {
-                videoOverlay.classList.add('hidden');
-            }
-            
-            if (video) {
-                console.log('尝试播放视频...');
-                video.play().then(function() {
-                    console.log('视频开始播放');
-                    sendInitialMessage();
-                }).catch(function(error) {
-                    console.error('视频播放失败:', error);
-                    alert('视频播放失败: ' + error.message + '\n请检查视频文件是否存在，以及浏览器是否允许自动播放。');
-                });
-            } else {
-                console.error('找不到视频元素');
-                alert('找不到视频元素，请刷新页面重试');
-            }
-        };
-    } else {
-        console.error('找不到开始学习按钮');
+            startLearning();
+        });
     }
     
-    // 发送按钮
+    // 发送消息按钮
     if (sendBtn) {
-        sendBtn.onclick = function() {
+        sendBtn.addEventListener('click', function() {
             console.log('点击了发送按钮');
             sendMessage();
-        };
-    } else {
-        console.error('找不到发送按钮');
+        });
     }
     
-    // 回车发送
-    if (userInput) {
-        userInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
+    // 输入框回车发送
+    if (chatInput) {
+        chatInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                console.log('按下回车键');
                 sendMessage();
             }
         });
@@ -137,74 +81,103 @@ function bindEvents() {
     
     // 视频事件
     if (video) {
-        video.addEventListener('timeupdate', handleVideoTimeUpdate);
-        
         video.addEventListener('loadedmetadata', function() {
             console.log('视频元数据加载完成，时长:', video.duration);
-            if (totalTimeEl) {
-                totalTimeEl.textContent = formatTime(video.duration);
-            }
         });
         
         video.addEventListener('canplay', function() {
             console.log('视频可以播放');
         });
         
-        video.addEventListener('error', function(e) {
-            console.error('视频加载错误:', video.error);
-            if (video.error) {
-                let errorMsg = '未知错误';
-                switch(video.error.code) {
-                    case 1: errorMsg = '视频加载被中止'; break;
-                    case 2: errorMsg = '网络错误'; break;
-                    case 3: errorMsg = '视频解码失败'; break;
-                    case 4: errorMsg = '视频格式不支持'; break;
-                }
-                console.error('视频错误详情:', errorMsg);
-            }
-        });
-        
-        video.addEventListener('ended', function() {
-            hasTriggeredExercise = false;
+        video.addEventListener('timeupdate', function() {
+            // 视频播放进度监控
         });
     }
 }
 
-// ==================== 视频控制 ====================
-function initVideo() {
+// ==================== 开始学习 ====================
+function startLearning() {
+    if (hasStarted) {
+        console.log('已经开始了，跳过');
+        return;
+    }
+    
+    hasStarted = true;
+    
+    // 播放视频
     if (video) {
-        video.load();
+        console.log('尝试播放视频...');
+        video.play().then(function() {
+            console.log('视频开始播放');
+        }).catch(function(error) {
+            console.error('视频播放失败:', error);
+        });
     }
-}
-
-function handleVideoTimeUpdate() {
-    if (!video || !progressFill || !currentTimeEl) return;
     
-    // 更新进度条
-    const progress = (video.currentTime / video.duration) * 100;
-    progressFill.style.width = progress + '%';
-    currentTimeEl.textContent = formatTime(video.currentTime);
-    
-    // 检查是否到达暂停时间点
-    if (!hasTriggeredExercise && video.currentTime >= CONFIG.VIDEO_PAUSE_TIME) {
-        video.pause();
-        hasTriggeredExercise = true;
-        isVideoPaused = true;
-    }
+    // 发送初始消息
+    sendInitialMessage();
 }
 
-function formatTime(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-}
-
-// ==================== API调用 ====================
-async function callCozeAPI(userMessage) {
+// ==================== 发送初始消息 ====================
+async function sendInitialMessage() {
+    const initialMessage = '你好，我想学习中点四边形';
+    addMessage(initialMessage, 'user');
     showLoading(true);
-    console.log('调用API，消息:', userMessage);
     
+    const reply = await callCozeAPI(initialMessage);
+    addMessage(reply, 'assistant');
+    showLoading(false);
+}
+
+// ==================== 发送消息 ====================
+async function sendMessage() {
+    const message = chatInput.value.trim();
+    if (!message) {
+        console.log('消息为空，跳过');
+        return;
+    }
+    
+    chatInput.value = '';
+    addMessage(message, 'user');
+    showLoading(true);
+    
+    const reply = await callCozeAPI(message);
+    addMessage(reply, 'assistant');
+    showLoading(false);
+}
+
+// ==================== 添加消息到聊天区域 ====================
+function addMessage(content, role) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message ' + (role === 'user' ? 'user-message' : 'assistant-message');
+    messageDiv.innerHTML = '<div class="message-content">' + formatMessage(content) + '</div>';
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// ==================== 格式化消息内容 ====================
+function formatMessage(content) {
+    // 处理换行
+    return content.replace(/\n/g, '<br>');
+}
+
+// ==================== 显示/隐藏加载状态 ====================
+function showLoading(show) {
+    const loadingDiv = document.getElementById('loadingIndicator');
+    if (loadingDiv) {
+        loadingDiv.style.display = show ? 'block' : 'none';
+    }
+    
+    if (sendBtn) {
+        sendBtn.disabled = show;
+    }
+}
+
+// ==================== 调用扣子API ====================
+async function callCozeAPI(userMessage) {
     try {
+        console.log('调用API，消息:', userMessage);
+        
         const requestBody = {
             bot_id: CONFIG.BOT_ID,
             user_id: CONFIG.USER_ID,
@@ -219,6 +192,7 @@ async function callCozeAPI(userMessage) {
             ]
         };
         
+        // 如果有会话ID，添加到请求中
         if (conversationId) {
             requestBody.conversation_id = conversationId;
         }
@@ -229,8 +203,7 @@ async function callCozeAPI(userMessage) {
             method: 'POST',
             headers: {
                 'Authorization': 'Bearer ' + CONFIG.API_TOKEN,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify(requestBody)
         });
@@ -238,34 +211,34 @@ async function callCozeAPI(userMessage) {
         console.log('响应状态:', response.status);
         
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error('API错误响应:', errorText);
-            throw new Error('API请求失败: ' + response.status + ' - ' + errorText);
+            throw new Error('API请求失败: ' + response.status);
         }
         
         const result = await response.json();
         console.log('API响应:', result);
         
+        // 保存会话ID
         if (result.data && result.data.conversation_id) {
             conversationId = result.data.conversation_id;
             console.log('保存会话ID:', conversationId);
         }
         
-        showLoading(false);
+        // 获取chat_id
+        const chatId = result.data && result.data.id;
         
-        if (result.data && result.data.messages) {
-            for (const msg of result.data.messages) {
-                if (msg.role === 'assistant' && msg.type === 'answer') {
-                    return msg.content;
-                }
-            }
+        // 检查状态
+        if (result.data && result.data.status === 'in_progress') {
+            console.log('AI正在生成回复，开始轮询...');
+            return await pollForResult(chatId);
         }
         
-        if (result.data && result.data.content) {
-            return result.data.content;
+        // 如果状态是completed，直接解析响应
+        if (result.data && result.data.status === 'completed') {
+            return extractReplyContent(result);
         }
         
-        return '收到回复，但无法解析内容。请查看控制台日志。';
+        // 尝试直接解析（兼容其他格式）
+        return extractReplyContent(result);
         
     } catch (error) {
         showLoading(false);
@@ -279,143 +252,160 @@ async function callCozeAPI(userMessage) {
     }
 }
 
-// ==================== 消息处理 ====================
-async function sendInitialMessage() {
-    const botReply = await callCozeAPI('你好，我想学习中点四边形');
-    processBotReply(botReply);
-}
-
-async function sendMessage() {
-    if (!userInput) {
-        console.error('找不到输入框元素');
-        return;
-    }
+// ==================== 轮询获取结果 ====================
+async function pollForResult(chatId) {
+    const maxPolls = 30; // 最多轮询30次
+    const pollInterval = 1500; // 每次间隔1.5秒
     
-    const message = userInput.value.trim();
-    if (!message) {
-        console.log('消息为空，不发送');
-        return;
-    }
-    
-    console.log('发送消息:', message);
-    
-    addMessage(message, 'user');
-    userInput.value = '';
-    
-    const botReply = await callCozeAPI(message);
-    processBotReply(botReply);
-}
-
-function processBotReply(reply) {
-    console.log('处理回复:', reply);
-    
-    const videoControlMatch = reply.match(/\[VIDEO:([^\]]+)\]/);
-    
-    if (videoControlMatch) {
-        const parts = videoControlMatch[1].split('|');
-        const action = parts[0];
-        const timestamp = parseInt(parts[1]) || 0;
-        const reason = parts[2] || '';
+    for (let i = 0; i < maxPolls; i++) {
+        console.log('轮询第 ' + (i + 1) + ' 次，chatId: ' + chatId);
         
-        console.log('解析到视频控制指令:', action, timestamp, reason);
-        executeVideoControl(action, timestamp, reason);
+        await new Promise(function(resolve) {
+            setTimeout(resolve, pollInterval);
+        });
         
-        reply = reply.replace(/\[VIDEO:[^\]]+\]/g, '').trim();
-    }
-    
-    reply = parseImages(reply);
-    
-    if (reply) {
-        addMessage(reply, 'bot');
-    }
-}
-
-function parseImages(text) {
-    return text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(match, alt, url) {
-        return `<img src="${url}" alt="${alt}" style="max-width:100%;border-radius:8px;margin:8px 0;">`;
-    });
-}
-
-function executeVideoControl(action, timestamp, reason) {
-    console.log('执行视频控制:', action, timestamp, reason);
-    
-    if (!video) {
-        console.error('视频元素不存在');
-        return;
-    }
-    
-    switch (action) {
-        case 'play':
-            video.play().catch(function(e) {
-                console.error('播放失败:', e);
+        try {
+            // 第一步：GET请求查询对话状态
+            const pollUrl = 'https://api.coze.cn/v3/chat/retrieve?conversation_id=' + conversationId + '&chat_id=' + chatId;
+            
+            const response = await fetch(pollUrl, {
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + CONFIG.API_TOKEN,
+                    'Content-Type': 'application/json'
+                }
             });
-            break;
-        case 'pause':
-            video.pause();
-            isVideoPaused = true;
-            if (timestamp > 0) {
-                video.currentTime = timestamp;
+            
+            if (!response.ok) {
+                console.error('轮询请求失败:', response.status);
+                continue;
             }
-            break;
-        case 'jump':
-            video.currentTime = timestamp;
-            hasTriggeredExercise = false;
-            video.play().catch(function(e) {
-                console.error('跳转后播放失败:', e);
-            });
-            break;
-        default:
-            console.log('未知视频控制指令:', action);
+            
+            const result = await response.json();
+            console.log('轮询响应:', JSON.stringify(result, null, 2));
+            
+            if (result.data && result.data.status === 'completed') {
+                // 第二步：GET请求获取消息列表
+                return await getMessageList(chatId);
+            }
+            
+            if (result.data && result.data.status === 'failed') {
+                showLoading(false);
+                return '抱歉，AI处理失败，请稍后再试。';
+            }
+        } catch (error) {
+            console.error('轮询错误:', error);
+        }
+    }
+    
+    showLoading(false);
+    return '抱歉，AI回复超时，请稍后再试。';
+}
+
+// ==================== 获取消息列表 ====================
+async function getMessageList(chatId) {
+    try {
+        const messageUrl = 'https://api.coze.cn/v3/chat/message/list?conversation_id=' + conversationId + '&chat_id=' + chatId;
+        
+        const response = await fetch(messageUrl, {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + CONFIG.API_TOKEN,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            console.error('获取消息列表失败:', response.status);
+            showLoading(false);
+            return '获取回复失败，请稍后再试。';
+        }
+        
+        const result = await response.json();
+        console.log('消息列表响应:', JSON.stringify(result, null, 2));
+        
+        showLoading(false);
+        
+        // 解析消息列表，查找type=answer的消息
+        if (result.data && Array.isArray(result.data)) {
+            for (let i = 0; i < result.data.length; i++) {
+                const msg = result.data[i];
+                if (msg.type === 'answer' && msg.content) {
+                    return msg.content;
+                }
+            }
+        }
+        
+        return '收到回复，但未找到有效内容。';
+    } catch (error) {
+        console.error('获取消息列表错误:', error);
+        showLoading(false);
+        return '获取回复时出错，请稍后再试。';
     }
 }
 
-function addMessage(content, type) {
-    if (!chatMessages) {
-        console.error('找不到聊天消息容器');
-        return;
+// ==================== 提取回复内容 ====================
+function extractReplyContent(result) {
+    let replyContent = null;
+    
+    // 格式1: data.messages数组中有assistant的answer
+    if (result.data && result.data.messages && Array.isArray(result.data.messages)) {
+        for (let i = 0; i < result.data.messages.length; i++) {
+            const msg = result.data.messages[i];
+            if (msg.role === 'assistant' && msg.type === 'answer') {
+                replyContent = msg.content;
+                break;
+            }
+        }
     }
     
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${type}-message`;
-    
-    const avatar = type === 'bot' ? '👩‍🏫' : '👤';
-    
-    messageDiv.innerHTML = `
-        <div class="message-avatar">${avatar}</div>
-        <div class="message-content">
-            ${type === 'bot' ? formatBotMessage(content) : `<p>${escapeHtml(content)}</p>`}
-        </div>
-    `;
-    
-    chatMessages.appendChild(messageDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-function formatBotMessage(content) {
-    let html = content.replace(/\n/g, '<br>');
-    if (!html.startsWith('<')) {
-        html = '<p>' + html + '</p>';
+    // 格式2: data.content
+    if (!replyContent && result.data && result.data.content) {
+        replyContent = result.data.content;
     }
-    return html;
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// ==================== 工具函数 ====================
-function showLoading(show) {
-    if (!loadingOverlay) return;
     
-    if (show) {
-        loadingOverlay.classList.add('active');
-    } else {
-        loadingOverlay.classList.remove('active');
+    // 格式3: data.answer
+    if (!replyContent && result.data && result.data.answer) {
+        replyContent = result.data.answer;
+    }
+    
+    // 格式4: result.content
+    if (!replyContent && result.content) {
+        replyContent = result.content;
+    }
+    
+    // 格式5: result.answer
+    if (!replyContent && result.answer) {
+        replyContent = result.answer;
+    }
+    
+    if (replyContent) {
+        return replyContent;
+    }
+    
+    console.error('无法解析API响应，完整数据:', JSON.stringify(result, null, 2));
+    return '收到回复，但无法解析内容。请查看浏览器控制台(F12)获取详细日志。';
+}
+
+// ==================== 视频控制 ====================
+function pauseVideo() {
+    if (video) {
+        video.pause();
     }
 }
 
-// ==================== 调试日志 ====================
+function playVideo() {
+    if (video) {
+        video.play();
+    }
+}
+
+function seekVideo(time) {
+    if (video) {
+        video.currentTime = time;
+    }
+}
+
+// ==================== 页面加载提示 ====================
 console.log('小艾老师教学网页脚本已加载');
 console.log('Bot ID:', CONFIG.BOT_ID);
