@@ -414,6 +414,18 @@ async function callCozeAPI(message) {
     try {
         console.log('发送消息到扣子API:', message);
         
+        const body = {
+            bot_id: CONFIG.BOT_ID,
+            user_id: CONFIG.USER_ID,
+            query: message,
+            stream: false
+        };
+        
+        // 如果有conversation_id，添加到请求中
+        if (conversationId) {
+            body.conversation_id = conversationId;
+        }
+        
         const response = await fetch(CONFIG.API_URL, {
             method: 'POST',
             headers: {
@@ -421,12 +433,7 @@ async function callCozeAPI(message) {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
-            body: JSON.stringify({
-                bot_id: CONFIG.BOT_ID,
-                user_id: CONFIG.USER_ID,
-                query: message,
-                stream: false
-            })
+            body: JSON.stringify(body)
         });
         
         if (!response.ok) {
@@ -438,12 +445,18 @@ async function callCozeAPI(message) {
         const data = await response.json();
         console.log('API响应:', data);
         
-        // 提取回复内容
+        // 保存conversation_id（用于后续对话）
+        if (data.conversation_id) {
+            conversationId = data.conversation_id;
+            console.log('已保存conversation_id:', conversationId);
+        }
+        
+        // 提取回复内容（使用正确的响应结构）
         let reply = '';
-        if (data.messages && data.messages.length > 0) {
-            const lastMessage = data.messages[data.messages.length - 1];
-            if (lastMessage.type === 'answer') {
-                reply = lastMessage.content;
+        if (data.choices && data.choices.length > 0) {
+            const message = data.choices[0].message;
+            if (message && message.content) {
+                reply = message.content;
             }
         }
         
