@@ -6,9 +6,9 @@ const CONFIG = {
     BOT_ID: '7625443699455557674',
 
     // 视频控制时间点（秒）
-    VIDEO_PAUSE_TIME: 385,  // 6分25秒暂停（第一道测试题）
-    VIDEO_PAUSE_TIME_2: 390,  // 第二道测试题暂停时间
-    VIDEO_PAUSE_TIME_3: 395,  // 第三道测试题暂停时间
+    VIDEO_PAUSE_TIME: 387,  // 6分25秒暂停（第一道测试题）
+    VIDEO_PAUSE_TIME_2: 391,  // 第二道测试题暂停时间
+    VIDEO_PAUSE_TIME_3: 396,  // 第三道测试题暂停时间
     VIDEO_JUMP_TIME: 152,   // 2分32秒跳转（特殊平行四边形的中点四边形）
 
     // 用户ID（可自定义）
