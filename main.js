@@ -132,7 +132,6 @@ video.addEventListener('timeupdate', function() {
     const reply = await callCozeAPI(message);
     addMessage(reply, 'assistant');
     showLoading(false);
-}
     }
 }
 
