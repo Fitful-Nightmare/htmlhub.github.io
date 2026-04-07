@@ -187,7 +187,8 @@ function formatMessage(content) {
     // 移除代码片段（过滤掉```代码块）
     content = content.replace(/```[\s\S]*?```/g, '[代码已隐藏]');
 
-    // 处理换行
+    // Agent输出HTML格式，前端只负责渲染，不做任何转换
+    // 处理换行（保留HTML中的<br>标签）
     return content.replace(/\n/g, '<br>');
 }
 
