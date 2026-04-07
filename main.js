@@ -154,12 +154,21 @@ async function sendMessage() {
 
 // ==================== 添加消息到聊天区域 ====================
 function addMessage(content, role) {
+    console.log('addMessage 调用，角色:', role, '内容:', content);
+
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message ' + (role === 'user' ? 'user-message' : 'assistant-message');
-    messageDiv.innerHTML = '<div class="message-content">' + formatMessage(content) + '</div>';
+
+    const formattedContent = formatMessage(content);
+    console.log('格式化后的内容:', formattedContent);
+
+    messageDiv.innerHTML = '<div class="message-content">' + formattedContent + '</div>';
+
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
-    
+
+    console.log('消息已添加到DOM，图片元素数量:', messageDiv.querySelectorAll('img').length);
+
     // 如果是AI回复，检查是否有视频控制指令
     if (role === 'assistant') {
         const videoControl = parseVideoControl(content);
@@ -177,34 +186,6 @@ function formatMessage(content) {
 
     // 移除代码片段（过滤掉```代码块）
     content = content.replace(/```[\s\S]*?```/g, '[代码已隐藏]');
-
-    // 处理Markdown图片格式：![alt](url) -> <img src="url" alt="alt">
-    content = content.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(match, alt, url) {
-        // 如果是example.com的链接，不显示（这是示例链接）
-        if (url.includes('example.com')) {
-            return '';
-        }
-
-        // 处理本地图片文件（image.png, image_1.png等）- 转换为Coze URL
-        if (url.match(/^image[_\d]*\.png$/i)) {
-            // 映射关系：使用正确的 Coze URL
-            const imageMap = {
-                'image.png': 'https://www.coze.cn/s/Cx34uQIj3Rg/?width_height=515x326',
-                'image_1.png': 'https://www.coze.cn/s/MA1Oc5DFQJI/?width_height=534x356'
-            };
-            const cozeUrl = imageMap[url];
-            if (cozeUrl) {
-                return '<img src="' + cozeUrl + '" alt="' + alt + '" style="max-width: 100%; margin: 10px 0;">';
-            }
-        }
-
-        // 如果是https://www.coze.cn/s/的链接，直接使用
-        if (url.startsWith('https://www.coze.cn/s/')) {
-            return '<img src="' + url + '" alt="' + alt + '" style="max-width: 100%; margin: 10px 0;">';
-        }
-
-        return '';
-    });
 
     // 处理换行
     return content.replace(/\n/g, '<br>');
