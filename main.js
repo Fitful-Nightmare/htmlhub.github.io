@@ -1,554 +1,287 @@
+/**
+ * 小艾老师微课系统前端架构逻辑 (V5.0 - 调度Agent适配版)
+ * 
+ * 主要变更：
+ * 1. 将信号格式从文本封装改为结构化参数，直接匹配调度Agent工作流的输入需求
+ * 2. signal_type、video_status、content 三个参数独立传递
+ * 3. 习题区对话附带视频时间戳（格式：当前时间:XXXs）
+ */
+
 // ==================== 配置区域 ====================
 const CONFIG = {
-    // 扣子API配置
-    API_URL: 'https://api.coze.cn/v3/chat',
-    API_TOKEN: 'pat_Lky4npo9KhdjkggnB2i6gotKbfY7DlzCjZbATBhqv1YbUXD1g81F7TXt5UCA83OG',
-    BOT_ID: '7625443699455557674',
-
-    // 视频控制时间点（秒）
-    VIDEO_PAUSE_TIME: 387,  // 6分25秒暂停（第一道测试题）
-    VIDEO_PAUSE_TIME_2: 391,  // 第二道测试题暂停时间
-    VIDEO_PAUSE_TIME_3: 396,  // 第三道测试题暂停时间
-    VIDEO_JUMP_TIME: 152,   // 2分32秒跳转（特殊平行四边形的中点四边形）
-
-    // 用户ID（可自定义）
-    USER_ID: 'student_' + Date.now()
+    API_URL: 'https://api.coze.cn/v3/chat',  // 扣子API地址
+    API_TOKEN: 'pat_hLMslFqT8KMQMVjlr7gLOwF5czE3kg19XEbiV52RnVEtbPfIl7vrz6rASkgDcOoT',  // 替换为调度Agent的API Token
+    BOT_ID: '7630581119313838122',  // 替换为调度Agent的BOT_ID
+    OSS_BASE_URL: 'https://aiteacheryaohongyu.oss-cn-shanghai.aliyuncs.com/',
+    USER_ID: 'student_' + Date.now(),
+    COURSES: {
+        "中点四边形": { id: "COURSE_ZD", file: "video.mp4" },
+        "完全平方和公式": { id: "COURSE_WQ", file: "video_1.mp4" }
+    }
 };
 
-// ==================== 全局变量 ====================
+// ==================== 全局状态 ====================
 let video = null;
-let startBtn = null;
-let sendBtn = null;
-let chatInput = null;
 let chatMessages = null;
-let conversationId = null;
-let hasStarted = false;
-let currentQuestion = 0;  // 当前题目编号（0表示不在题目阶段，1-3表示对应的题目）
+let chatInput = null;
+let currentCourse = null;
+let pausePoints = [];  // 动态暂停点
+let knowledgeBoundary = 0;  // 知识区与习题区分界线（秒）
+let triggeredPauses = new Set();
 
-// ==================== 页面初始化 ====================
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('页面加载完成，开始初始化...');
-
-    // 获取DOM元素
+document.addEventListener('DOMContentLoaded', () => {
     video = document.getElementById('courseVideo');
-    startBtn = document.getElementById('startBtn');
-    sendBtn = document.getElementById('sendBtn');
-    chatInput = document.getElementById('chatInput');
     chatMessages = document.getElementById('chatMessages');
-
-    console.log('视频元素:', video);
-    console.log('开始学习按钮:', startBtn);
-    console.log('发送按钮:', sendBtn);
-
-    // 设置视频源（OSS在线链接）
+    chatInput = document.getElementById('chatInput');
+    chatMessages.innerHTML = '';
     if (video) {
-        video.src = 'https://aiteacheryaohongyu.oss-cn-shanghai.aliyuncs.com/video.mp4';
-        console.log('已设置视频源（OSS在线）:', video.src);
+        video.removeAttribute('src');
+        video.addEventListener('timeupdate', handleTimeUpdate);
     }
-
-    // 绑定事件
     bindEvents();
-
-    console.log('初始化完成');
 });
 
-// ==================== 事件绑定 ====================
-function bindEvents() {
-    console.log('绑定事件...');
+// ==================== 1. 选课与初始化 ====================
+async function selectCourse(courseName) {
+    const config = CONFIG.COURSES[courseName];
+    if (!config) return;
+    currentCourse = config;
+    pausePoints = [];
+    knowledgeBoundary = 0;
+    triggeredPauses.clear();
+    video.src = CONFIG.OSS_BASE_URL + config.file;
+    video.load();
+    document.getElementById('videoOverlay').classList.add('hidden');
+    
+    // 发送选定信号：请求后端回传配置和开场白
+    // 调度Agent输入格式：signal_type + video_status + content
+    const response = await sendToAgent({
+        signal_type: "视频选定",
+        video_status: "",  // 视频选定时状态为空
+        content: `用户已选择《${courseName}》，课程ID：${config.id}`
+    });
+    processAgentReply(response);
+}
 
-    // 开始学习按钮
-    if (startBtn) {
-        startBtn.addEventListener('click', function() {
-            console.log('点击了开始学习按钮');
-            startLearning();
-        });
-    }
-
-    // 发送消息按钮
-    if (sendBtn) {
-        sendBtn.addEventListener('click', function() {
-            console.log('点击了发送按钮');
-            sendMessage();
-        });
-    }
-
-    // 输入框回车发送
-    if (chatInput) {
-        chatInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                console.log('按下回车键');
-                sendMessage();
-            }
-        });
-    }
-
-    // 恢复视频进度监听，在题目时间点自动暂停并通知Agent
-video.addEventListener('timeupdate', function() {
+// ==================== 2. 状态监测与信号发送 ====================
+function handleTimeUpdate() {
+    if (!currentCourse) return;
     const currentTime = Math.floor(video.currentTime);
     
-    // 检查第一道测试题（385秒）
-    if (currentTime === CONFIG.VIDEO_PAUSE_TIME && currentQuestion === 0) {
-        currentQuestion = 1;
+    // 自动暂停判定
+    if (pausePoints.includes(currentTime) && !triggeredPauses.has(currentTime)) {
         video.pause();
-        updatePlayButtonState(false);
-        console.log('到达第一道测试题位置，暂停视频并通知Agent');
-        // 通知Agent
-        notifyAgentPause(1);
+        triggeredPauses.add(currentTime);
+        const status = getVideoStatus();
+        
+        // 发送暂停节点信号
+        // 调度Agent输入格式：signal_type + video_status + content
+        sendToAgent({
+            signal_type: "暂停时间节点",
+            video_status: status,
+            content: `${currentTime}s`  // 节点时间作为content
+        }).then(reply => processAgentReply(reply));
     }
+}
+
+function getVideoStatus(time = video.currentTime) {
+    if (!currentCourse) return "未知";
+    // 如果指定时间（或当前时间）小于分界线，则为知识区
+    return time < knowledgeBoundary ? "知识区" : "习题区";
+}
+
+// ==================== 3. 指令解析器 (含跳转安全检查) ====================
+function processAgentReply(rawContent) {
+    if (!rawContent) return;
     
-    // 检查第二道测试题（时间待确认）
-    if (CONFIG.VIDEO_PAUSE_TIME_2 > 0 && 
-        currentTime === CONFIG.VIDEO_PAUSE_TIME_2 && 
-        currentQuestion === 1) {
-        currentQuestion = 2;
-        video.pause();
-        updatePlayButtonState(false);
-        console.log('到达第二道测试题位置，暂停视频并通知Agent');
-        notifyAgentPause(2);
-    }
+    // A. 注册暂停点指令 [CMD:SET_PAUSE|10,20]
+    const pauseMatch = rawContent.match(/\[CMD:SET_PAUSE\|([\d,]+)\]/);
+    if (pauseMatch) pausePoints = pauseMatch[1].split(',').map(n => parseInt(n.trim()));
     
-    // 检查第三道测试题（时间待确认）
-    if (CONFIG.VIDEO_PAUSE_TIME_3 > 0 && 
-        currentTime === CONFIG.VIDEO_PAUSE_TIME_3 && 
-        currentQuestion === 2) {
-        currentQuestion = 3;
-        video.pause();
-        updatePlayButtonState(false);
-        console.log('到达第三道测试题位置，暂停视频并通知Agent');
-        notifyAgentPause(3);
-    }
-});
-
-        video.addEventListener('canplay', function() {
-            console.log('视频可以播放');
-        });
-
-        // 移除自动暂停逻辑，完全由Agent控制
-
-    async function notifyAgentPause(questionNum) {
-    const message = '视频已暂停在第' + questionNum + '道测试题处';
-    addMessage(message, 'user');
-    showLoading(true);
-    const reply = await callCozeAPI(message);
-    addMessage(reply, 'assistant');
-    showLoading(false);
-    }
-}
-
-// ==================== 开始学习 ====================
-function startLearning() {
-    if (hasStarted) {
-        console.log('已经开始了，跳过');
-        return;
-    }
-
-    hasStarted = true;
-
-    // 隐藏视频遮罩层
-    const videoOverlay = document.getElementById('videoOverlay');
-    if (videoOverlay) {
-        videoOverlay.classList.add('hidden');
-    }
-
-    // 播放视频
-    if (video) {
-        console.log('尝试播放视频...');
-        video.play().then(function() {
-            console.log('视频开始播放');
-        }).catch(function(error) {
-            console.error('视频播放失败:', error);
-        });
-    }
-
-    // 发送初始消息
-    sendInitialMessage();
-}
-
-// ==================== 发送初始消息 ====================
-async function sendInitialMessage() {
-    const initialMessage = '你好，我想学习中点四边形';
-    addMessage(initialMessage, 'user');
-    showLoading(true);
-    const reply = await callCozeAPI(initialMessage);
-    addMessage(reply, 'assistant');
-    showLoading(false);
-}
-
-// ==================== 发送消息 ====================
-async function sendMessage() {
-    const message = chatInput.value.trim();
-    if (!message) {
-        console.log('消息为空，跳过');
-        return;
-    }
-
-    chatInput.value = '';
+    // B. 设置分界线指令 [CMD:SET_BOUNDARY|300]
+    const boundaryMatch = rawContent.match(/\[CMD:SET_BOUNDARY\|(\d+)\]/);
+    if (boundaryMatch) knowledgeBoundary = parseInt(boundaryMatch[1]);
     
-    // 如果视频正在播放，添加当前进度信息
-    let finalMessage = message;
-    if (video && !video.paused && currentQuestion > 0) {
-        finalMessage = message + '（当前视频进度：' + Math.floor(video.currentTime) + '秒）';
-    }
+    // C. 视频控制指令
+    if (rawContent.includes('[CMD:PLAY]')) video.play().catch(()=>{});
+    if (rawContent.includes('[CMD:PAUSE]')) video.pause();
     
-    addMessage(finalMessage, 'user');
-    showLoading(true);
-    const reply = await callCozeAPI(finalMessage);
-    addMessage(reply, 'assistant');
-    showLoading(false);
-}
-
-// ==================== 添加消息到聊天区域 ====================
-function addMessage(content, role) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'message ' + (role === 'user' ? 'user-message' : 'assistant-message');
-    messageDiv.innerHTML = '<div class="message-content">' + formatMessage(content) + '</div>';
-    chatMessages.appendChild(messageDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-
-    // 如果是AI回复，检查是否有视频控制指令
-    if (role === 'assistant') {
-        const videoControl = parseVideoControl(content);
-        if (videoControl) {
-            executeVideoControl(videoControl);
-        }
-    }
-}
-
-// ==================== 格式化消息内容 ====================
-function formatMessage(content) {
-    // 移除视频控制指令（不显示给学生看）
-    content = content.replace(/\[VIDEO:[^\]]*/g, '');
-
-    // 移除代码片段（过滤掉```代码块）
-    content = content.replace(/```[\s\S]*?```/g, '[代码已隐藏]');
-
-    // 移除Markdown图片格式（Agent不再输出图片）
-    content = content.replace(/!\[([^\]]*)\]\([^)]+\)/g, '');
-
-    // 处理换行
-    return content.replace(/\n/g, '<br>');
-}
-
-// ==================== 解析视频控制指令 ====================
-function parseVideoControl(content) {
-    // 匹配格式：[VIDEO:pause|时间戳|原因]
-    const pauseMatch = content.match(/\[VIDEO:pause\|(\d+)\|([^\]]*)\]/);
-    if (pauseMatch) {
-        return {
-            action: 'pause',
-            time: parseInt(pauseMatch[1]),
-            reason: pauseMatch[2]
-        };
-    }
-
-    // 匹配格式：[VIDEO:jump|时间戳|原因]
-    const jumpMatch = content.match(/\[VIDEO:jump\|(\d+)\|([^\]]*)\]/);
+    // D. 安全跳转指令 [CMD:JUMP|150]
+    const jumpMatch = rawContent.match(/\[CMD:JUMP\|(\d+)\]/);
     if (jumpMatch) {
-        return {
-            action: 'jump',
-            time: parseInt(jumpMatch[1]),
-            reason: jumpMatch[2]
-        };
-    }
-
-    // 匹配格式：[VIDEO:resume]（恢复播放）
-    const resumeMatch = content.match(/\[VIDEO:resume\]/);
-    if (resumeMatch) {
-        return {
-            action: 'resume',
-            reason: '恢复播放'
-        };
-    }
-
-    return null;
-}
-
-// ==================== 执行视频控制 ====================
-function executeVideoControl(control) {
-    if (!control || !video) return;
-
-    if (control.action === 'pause') {
-        video.pause();
-        updatePlayButtonState(false);
-        console.log('视频暂停:', control.reason, '时间点:', control.time);
-    } else if (control.action === 'jump') {
-        video.currentTime = control.time;
-        video.play();
-        updatePlayButtonState(true);
-        console.log('视频跳转至', control.time, '秒:', control.reason);
-    } else if (control.action === 'resume') {
-        video.play();
-        updatePlayButtonState(true);
-        console.log('视频恢复播放:', control.reason);
-    }
-}
-
-// ==================== 更新播放按钮状态 ====================
-function updatePlayButtonState(isPlaying) {
-    const playBtn = document.getElementById('playPauseBtn');
-    const videoOverlay = document.getElementById('videoOverlay');
-
-    if (playBtn) {
-        if (isPlaying) {
-            playBtn.innerHTML = '⏸'; // 暂停图标
+        const targetTime = parseInt(jumpMatch[1]);
+        const currentStatus = getVideoStatus();  // 当前状态
+        const targetStatus = getVideoStatus(targetTime);  // 目标点状态
+        
+        // 禁止从知识区跳转至习题区
+        if (currentStatus === "知识区" && targetStatus === "习题区") {
+            console.warn("跳转拦截：禁止从知识区直接跳转至习题区。");
+            addMessage("【系统提示】老师认为你还需要夯实基础，暂不支持跳过知识环节哦。", "assistant");
         } else {
-            playBtn.innerHTML = '▶'; // 播放图标
+            video.currentTime = targetTime;
+            video.play().catch(()=>{});
         }
     }
-
-    // 隐藏遮罩层
-    if (videoOverlay && isPlaying) {
-        videoOverlay.classList.add('hidden');
-    }
+    
+    // 过滤标签后显示文本
+    const cleanText = rawContent.replace(/\[CMD:[^\]]*\]/g, '').trim();
+    if (cleanText) addMessage(cleanText, 'assistant');
 }
 
-// ==================== 显示/隐藏加载状态 ====================
-function showLoading(show) {
-    const loadingDiv = document.getElementById('loadingIndicator');
-    if (loadingDiv) {
-        loadingDiv.style.display = show ? 'block' : 'none';
+// ==================== 4. 通信逻辑（核心适配层）====================
+async function sendMessage() {
+    const text = chatInput.value.trim();
+    if (!text || !currentCourse) return;
+    chatInput.value = '';
+    addMessage(text, 'user');
+    
+    const status = getVideoStatus();
+    const currentTime = Math.floor(video.currentTime);
+    
+    // 构造一般对话信号
+    // 调度Agent输入格式：signal_type + video_status + content
+    let content = text;
+    
+    // 【关键】习题区对话时，在content末尾添加当前视频时间
+    if (status === "习题区") {
+        content = `${text} 当前时间:${currentTime}s`;
     }
-
-    if (sendBtn) {
-        sendBtn.disabled = show;
-    }
+    
+    const response = await sendToAgent({
+        signal_type: "一般对话",
+        video_status: status,
+        content: content
+    });
+    processAgentReply(response);
 }
 
-// ==================== 调用扣子API ====================
-async function callCozeAPI(userMessage) {
+/**
+ * 核心通信函数 - 适配调度Agent工作流输入格式
+ * @param {Object} params - 结构化参数对象
+ * @param {string} params.signal_type - 信号类型：视频选定 | 暂停时间节点 | 一般对话
+ * @param {string} params.video_status - 视频状态：知识区 | 习题区 | (空)
+ * @param {string} params.content - 具体内容
+ */
+async function sendToAgent({ signal_type, video_status, content }) {
+    showLoading(true);
     try {
-        console.log('调用API，消息:', userMessage);
-
-        const requestBody = {
-            bot_id: CONFIG.BOT_ID,
-            user_id: CONFIG.USER_ID,
-            stream: false,
-            auto_save_history: true,
-            additional_messages: [
-                {
-                    role: 'user',
-                    content: userMessage,
-                    content_type: 'text'
-                }
-            ]
-        };
-
-        // 如果有会话ID，添加到请求中
-        if (conversationId) {
-            requestBody.conversation_id = conversationId;
-        }
-
-        console.log('请求体:', JSON.stringify(requestBody, null, 2));
-
+        // 构造符合调度Agent工作流输入格式的消息内容
+        // 将结构化参数以清晰格式传递，便于工作流解析
+        const messageContent = [
+            `[信号类型:${signal_type}]`,
+            `[视频状态:${video_status}]`,
+            content
+        ].filter(Boolean).join(' ');  // filter(Boolean) 过滤空值
+        
         const response = await fetch(CONFIG.API_URL, {
             method: 'POST',
             headers: {
-                'Authorization': 'Bearer ' + CONFIG.API_TOKEN,
+                'Authorization': `Bearer ${CONFIG.API_TOKEN}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify({
+                bot_id: CONFIG.BOT_ID,
+                user_id: CONFIG.USER_ID,
+                additional_messages: [{
+                    role: 'user',
+                    content: messageContent,
+                    content_type: 'text'
+                }]
+            })
         });
-
-        console.log('响应状态:', response.status);
-
-        if (!response.ok) {
-            throw new Error('API请求失败: ' + response.status);
-        }
-
         const result = await response.json();
-        console.log('API响应:', result);
-
-        // 保存会话ID
-        if (result.data && result.data.conversation_id) {
-            conversationId = result.data.conversation_id;
-            console.log('保存会话ID:', conversationId);
-        }
-
-        // 获取chat_id
-        const chatId = result.data && result.data.id;
-
-        // 检查状态
-        if (result.data && result.data.status === 'in_progress') {
-            console.log('AI正在生成回复，开始轮询...');
-            return await pollForResult(chatId);
-        }
-
-        // 如果状态是completed，直接解析响应
+        
+        // 处理异步响应：轮询获取完成状态
         if (result.data && result.data.status === 'completed') {
-            return extractReplyContent(result);
+            return await fetchMessages(result.data.id, result.data.conversation_id);
+        } else {
+            return await pollStatus(result.data.id, result.data.conversation_id);
         }
-
-        // 尝试直接解析（兼容其他格式）
-        return extractReplyContent(result);
-    } catch (error) {
+    } catch (e) {
+        console.error('通信异常:', e);
+        return "通讯异常，请稍后重试。";
+    } finally {
         showLoading(false);
-        console.error('API调用错误:', error);
-
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-            return '网络连接失败，可能是跨域问题。请尝试：\n1. 使用Vercel部署\n2. 或使用浏览器插件临时允许跨域';
-        }
-
-        return '抱歉，小艾老师遇到了一些问题：' + error.message;
     }
 }
 
-// ==================== 轮询获取结果 ====================
-async function pollForResult(chatId) {
-    const maxPolls = 40;  // 最多轮询40次
-    const pollInterval = 1000;  // 每次间隔1秒
-
-    for (let i = 0; i < maxPolls; i++) {
-        console.log('轮询第 ' + (i + 1) + ' 次，chatId: ' + chatId);
-
-        await new Promise(function(resolve) {
-            setTimeout(resolve, pollInterval);
+// ==================== 5. UI 与工具函数 ====================
+async function pollStatus(chatId, convId) {
+    for (let i = 0; i < 40; i++) {
+        const res = await fetch(`https://api.coze.cn/v3/chat/retrieve?conversation_id=${convId}&chat_id=${chatId}`, {
+            headers: { 'Authorization': `Bearer ${CONFIG.API_TOKEN}` }
         });
-
-        try {
-            // 第一步：GET请求查询对话状态
-            const pollUrl = 'https://api.coze.cn/v3/chat/retrieve?conversation_id=' + conversationId + '&chat_id=' + chatId;
-
-            const response = await fetch(pollUrl, {
-                method: 'GET',
-                headers: {
-                    'Authorization': 'Bearer ' + CONFIG.API_TOKEN,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (!response.ok) {
-                console.error('轮询请求失败:', response.status);
-                continue;
-            }
-
-            const result = await response.json();
-            console.log('轮询响应:', JSON.stringify(result, null, 2));
-
-            if (result.data && result.data.status === 'completed') {
-                // 第二步：GET请求获取消息列表
-                return await getMessageList(chatId);
-            }
-
-            if (result.data && result.data.status === 'failed') {
-                showLoading(false);
-                return '抱歉，AI处理失败，请稍后再试。';
-            }
-        } catch (error) {
-            console.error('轮询错误:', error);
-        }
+        const d = await res.json();
+        if (d.data.status === 'completed') return await fetchMessages(chatId, convId);
+        await new Promise(r => setTimeout(r, 1000));
     }
-
-    showLoading(false);
-    return '抱歉，AI回复超时，请稍后再试。';
+    return "老师忙线中...";
 }
 
-// ==================== 获取消息列表 ====================
-async function getMessageList(chatId) {
-    try {
-        const messageUrl = 'https://api.coze.cn/v3/chat/message/list?conversation_id=' + conversationId + '&chat_id=' + chatId;
-
-        const response = await fetch(messageUrl, {
-            method: 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + CONFIG.API_TOKEN,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (!response.ok) {
-            console.error('获取消息列表失败:', response.status);
-            showLoading(false);
-            return '获取回复失败，请稍后再试。';
-        }
-
-        const result = await response.json();
-        console.log('消息列表响应:', JSON.stringify(result, null, 2));
-
-        showLoading(false);
-
-        // 解析消息列表，查找type=answer的消息
-        if (result.data && Array.isArray(result.data)) {
-            for (let i = 0; i < result.data.length; i++) {
-                const msg = result.data[i];
-                if (msg.type === 'answer' && msg.content) {
-                    return msg.content;
-                }
-            }
-        }
-
-        return '收到回复，但未找到有效内容。';
-    } catch (error) {
-        console.error('获取消息列表错误:', error);
-        showLoading(false);
-        return '获取回复时出错，请稍后再试。';
-    }
+async function fetchMessages(chatId, convId) {
+    const res = await fetch(`https://api.coze.cn/v3/chat/message/list?conversation_id=${convId}&chat_id=${chatId}`, {
+        headers: { 'Authorization': `Bearer ${CONFIG.API_TOKEN}` }
+    });
+    const j = await res.json();
+    const ans = j.data.find(m => m.type === 'answer');
+    return ans ? ans.content : "";
 }
 
-// ==================== 提取回复内容 ====================
-function extractReplyContent(result) {
-    let replyContent = null;
-
-    // 格式1: data.messages数组中有assistant的answer
-    if (result.data && result.data.messages && Array.isArray(result.data.messages)) {
-        for (let i = 0; i < result.data.messages.length; i++) {
-            const msg = result.data.messages[i];
-            if (msg.role === 'assistant' && msg.type === 'answer') {
-                replyContent = msg.content;
-                break;
-            }
+function bindEvents() {
+    document.getElementById('sendBtn').onclick = sendMessage;
+    chatInput.onkeypress = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
         }
-    }
-
-    // 格式2: data.content
-    if (!replyContent && result.data && result.data.content) {
-        replyContent = result.data.content;
-    }
-
-    // 格式3: data.answer
-    if (!replyContent && result.data && result.data.answer) {
-        replyContent = result.data.answer;
-    }
-
-    // 格式4: result.content
-    if (!replyContent && result.content) {
-        replyContent = result.content;
-    }
-
-    // 格式5: result.answer
-    if (!replyContent && result.answer) {
-        replyContent = result.answer;
-    }
-
-    if (replyContent) {
-        return replyContent;
-    }
-
-    console.error('无法解析API响应，完整数据:', JSON.stringify(result, null, 2));
-    return '收到回复，但无法解析内容。请查看浏览器控制台(F12)获取详细日志。';
+    };
 }
 
-// ==================== 视频控制 ====================
-function pauseVideo() {
-    if (video) {
-        video.pause();
-    }
+function addMessage(text, role) {
+    const div = document.createElement('div');
+    div.className = `message ${role}-message`;
+    div.innerHTML = `<div class="message-content">${text.replace(/\n/g, '<br>')}</div>`;
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+function showLoading(show) {
+    const loader = document.getElementById('loadingOverlay');
+    if (loader) loader.classList.toggle('active', show);
+}
+
+// ==================== 6. 视频控制API（可选）====================
+/**
+ * 手动播放视频
+ */
 function playVideo() {
-    if (video) {
-        video.play();
-    }
+    if (video) video.play().catch(()=>{});
 }
 
-function seekVideo(time) {
-    if (video) {
-        video.currentTime = time;
-    }
+/**
+ * 手动暂停视频
+ */
+function pauseVideo() {
+    if (video) video.pause();
 }
 
-// ==================== 页面加载提示 ====================
-console.log('小艾老师教学网页脚本已加载');
-console.log('Bot ID:', CONFIG.BOT_ID);
-console.log('视频控制：完全由Agent指令控制');
-console.log('题目阶段：无需管理，按顺序作答');
-console.log('图片处理：Agent不再输出图片');
+/**
+ * 跳转到指定时间点
+ * @param {number} seconds - 目标时间（秒）
+ */
+function jumpTo(seconds) {
+    if (!video || !currentCourse) return;
+    
+    const currentStatus = getVideoStatus();
+    const targetStatus = getVideoStatus(seconds);
+    
+    // 禁止从知识区跳转至习题区
+    if (currentStatus === "知识区" && targetStatus === "习题区") {
+        console.warn("跳转拦截：禁止从知识区直接跳转至习题区。");
+        addMessage("【系统提示】老师认为你还需要夯实基础，暂不支持跳过知识环节哦。", "assistant");
+        return;
+    }
+    
+    video.currentTime = seconds;
+    video.play().catch(()=>{});
+}
