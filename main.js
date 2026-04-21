@@ -167,7 +167,7 @@ async function sendMessage() {
  * @param {string} params.course_id - 课程标识：COURSE_ZD | COURSE_WQ
  */
 async function sendToAgent({ signal_type, video_status, content, course_id }) {
-    showLoading(true);
+    //showLoading(true);
     try {
         // 构造符合后端工作流输入格式的消息内容
         // 使用JSON格式传递参数，便于后端解析
@@ -206,7 +206,7 @@ async function sendToAgent({ signal_type, video_status, content, course_id }) {
         console.error('通信异常:', e);
         return "通讯异常，请稍后重试。";
     } finally {
-        showLoading(false);
+        //showLoading(false);
     }
 }
 
