@@ -1,10 +1,10 @@
 /**
- * 小艾老师微课系统前端架构逻辑 (V5.0 - 调度Agent适配版)
+ * 小艾老师微课系统前端架构逻辑 (V5.3 - course_id独立字段版)
  * 
  * 主要变更：
- * 1. 将信号格式从文本封装改为结构化参数，直接匹配调度Agent工作流的输入需求
- * 2. signal_type、video_status、content 三个参数独立传递
- * 3. 习题区对话附带视频时间戳（格式：当前时间:XXXs）
+ * 1. 前端输出格式增加 course_id 独立字段
+ * 2. 将 course_id 从 content 中剥离
+ * 3. 后端期望四个参数：signal_type、video_status、content、course_id
  */
 
 // ==================== 配置区域 ====================
@@ -54,11 +54,12 @@ async function selectCourse(courseName) {
     document.getElementById('videoOverlay').classList.add('hidden');
     
     // 发送选定信号：请求后端回传配置和开场白
-    // 调度Agent输入格式：signal_type + video_status + content
+    // 后端参数：signal_type、video_status、content、course_id
     const response = await sendToAgent({
         signal_type: "视频选定",
         video_status: "",  // 视频选定时状态为空
-        content: `用户已选择《${courseName}》，课程ID：${config.id}`
+        content: `用户已选择《${courseName}》。`,  // content不再包含课程ID
+        course_id: config.id  // 课程ID独立字段
     });
     processAgentReply(response);
 }
@@ -75,11 +76,12 @@ function handleTimeUpdate() {
         const status = getVideoStatus();
         
         // 发送暂停节点信号
-        // 调度Agent输入格式：signal_type + video_status + content
+        // 后端参数：signal_type、video_status、content、course_id
         sendToAgent({
             signal_type: "暂停时间节点",
             video_status: status,
-            content: `${currentTime}s`  // 节点时间作为content
+            content: `${currentTime}s`,  // 节点时间作为content
+            course_id: currentCourse.id  // 课程ID独立字段
         }).then(reply => processAgentReply(reply));
     }
 }
@@ -139,7 +141,7 @@ async function sendMessage() {
     const currentTime = Math.floor(video.currentTime);
     
     // 构造一般对话信号
-    // 调度Agent输入格式：signal_type + video_status + content
+    // 后端参数：signal_type、video_status、content、course_id
     let content = text;
     
     // 【关键】习题区对话时，在content末尾添加当前视频时间
@@ -150,28 +152,31 @@ async function sendMessage() {
     const response = await sendToAgent({
         signal_type: "一般对话",
         video_status: status,
-        content: content
+        content: content,
+        course_id: currentCourse.id  // 课程ID独立字段
     });
     processAgentReply(response);
 }
 
 /**
- * 核心通信函数 - 适配调度Agent工作流输入格式
+ * 核心通信函数 - 发送结构化参数到调度Agent工作流
  * @param {Object} params - 结构化参数对象
  * @param {string} params.signal_type - 信号类型：视频选定 | 暂停时间节点 | 一般对话
  * @param {string} params.video_status - 视频状态：知识区 | 习题区 | (空)
  * @param {string} params.content - 具体内容
+ * @param {string} params.course_id - 课程标识：COURSE_ZD | COURSE_WQ
  */
-async function sendToAgent({ signal_type, video_status, content }) {
+async function sendToAgent({ signal_type, video_status, content, course_id }) {
     showLoading(true);
     try {
-        // 构造符合调度Agent工作流输入格式的消息内容
-        // 将结构化参数以清晰格式传递，便于工作流解析
-        const messageContent = [
-            `[信号类型:${signal_type}]`,
-            `[视频状态:${video_status}]`,
-            content
-        ].filter(Boolean).join(' ');  // filter(Boolean) 过滤空值
+        // 构造符合后端工作流输入格式的消息内容
+        // 使用JSON格式传递参数，便于后端解析
+        const messageContent = JSON.stringify({
+            signal_type: signal_type,
+            video_status: video_status,
+            content: content,
+            course_id: course_id
+        });
         
         const response = await fetch(CONFIG.API_URL, {
             method: 'POST',
