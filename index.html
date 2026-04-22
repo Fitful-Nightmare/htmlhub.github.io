@@ -1,44 +1,65 @@
-<div class="container">
-    <div class="video-section">
-        <div class="top-controls">
-            <button class="back-btn" onclick="location.reload()">← 返回</button>
-        </div>
-        
-        <div class="video-container">
-            <video id="courseVideo" controls preload="metadata">
-                您的浏览器不支持视频播放。
-            </video>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小艾老师微课系统</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="video-section">
+            <div class="top-controls">
+                <button class="back-btn" onclick="location.reload()">← 返回</button>
+            </div>
             
-            <div class="video-overlay" id="videoOverlay">
-                <div class="overlay-content">
-                    <h2>准备好开始学习了吗？</h2>
-                    <p>请选择今日的学习内容：</p>
-                    <div class="course-options">
-                        <button class="start-btn" onclick="selectCourse('中点四边形')">中点四边形</button>
-                        <button class="start-btn secondary" onclick="selectCourse('完全平方和公式')">完全平方和公式</button>
+            <div class="video-container">
+                <video id="courseVideo" controls preload="metadata">
+                    您的浏览器不支持视频播放。
+                </video>
+                
+                <div class="video-overlay" id="videoOverlay">
+                    <div class="overlay-content">
+                        <h2>准备好开始学习了吗？</h2>
+                        <p>请选择今日的学习内容：</p>
+                        <div class="course-options">
+                            <button class="start-btn" onclick="selectCourse('中点四边形')">中点四边形</button>
+                            <button class="start-btn secondary" onclick="selectCourse('完全平方和公式')">完全平方和公式</button>
+                        </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="video-info">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="video-stats">
+                    <span id="currentTime">0:00</span> / <span id="duration">0:00</span>
                 </div>
             </div>
         </div>
 
-        <div class="video-info">
-            <div class="progress-bar">
-                <div class="progress-fill" id="progressFill"></div>
-            </div>
-            <div class="video-stats">
-                <span id="currentTime">0:00</span> / <span id="duration">0:00</span>
+        <div class="chat-section">
+            <div class="chat-messages" id="chatMessages"></div>
+            
+            <div class="chat-input-area">
+                <textarea id="chatInput" placeholder="在此输入你的回答或疑问..." rows="2"></textarea>
+                <button class="send-btn" id="sendBtn">
+                    <span>发送</span>
+                    <svg viewBox="0 0 24 24" width="18" height="18">
+                        <path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                    </svg>
+                </button>
             </div>
         </div>
     </div>
 
-    <div class="chat-section">
-        <div class="chat-messages" id="chatMessages"></div>
-        
-        <div class="chat-input-area">
-            <textarea id="chatInput" placeholder="在此输入你的回答或疑问..." rows="2"></textarea>
-            <button class="send-btn" id="sendBtn">
-                <span>发送</span>
-                </button>
-        </div>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <p>老师正在思考中...</p>
     </div>
-</div>
+
+    <script src="main.js"></script>
+</body>
+</html>
