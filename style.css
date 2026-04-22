@@ -1,18 +1,44 @@
-/* --- 新增与修改的样式 --- */
+/* 全局重置 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
 
-/* 顶部控制栏 */
+body {
+    font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #f0f2f5;
+    height: 100vh;
+    overflow: hidden; /* 防止 body 出现全局滚动条 */
+}
+
+.container {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* --- 左侧视频区 (70%) --- */
+.video-section {
+    flex: 7;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    padding: 0 15px 15px 15px; /* 顶部留出给返回按钮的空间 */
+    position: relative;
+}
+
 .top-controls {
-    padding: 10px 5px;
+    height: 50px;
     display: flex;
     align-items: center;
 }
 
-/* 返回按钮：小字体、简洁设计 */
 .back-btn {
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.3);
     color: rgba(255, 255, 255, 0.8);
-    padding: 4px 12px;
+    padding: 5px 15px;
     font-size: 13px;
     border-radius: 4px;
     cursor: pointer;
@@ -25,34 +51,74 @@
     border-color: #fff;
 }
 
-/* 移除原有的 header 样式 */
-.video-header, .chat-header {
+.video-container {
+    flex: 1;
+    position: relative;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+}
+
+video {
+    width: 100%;
+    height: auto;
+    max-height: 100%;
+}
+
+/* 课程选择遮罩 */
+.video-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10;
+}
+
+.video-overlay.hidden {
     display: none;
 }
 
-/* 调整视频区域，使其在移除标题后更好地利用空间 */
-.video-section {
-    flex: 7;
-    background: #000;
+.overlay-content {
+    text-align: center;
+    color: white;
+}
+
+.course-options {
     display: flex;
     flex-direction: column;
-    padding: 10px 15px 15px 15px; /* 稍微压缩顶部间距 */
-    position: relative;
+    gap: 15px;
+    margin-top: 25px;
 }
 
-.video-container {
-    flex: 1;
-    /* 确保视频容器填满剩余空间 */
+.start-btn {
+    padding: 12px 40px;
+    font-size: 18px;
+    border: none;
+    border-radius: 25px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    cursor: pointer;
 }
 
-/* 聊天区在移除顶栏后，确保消息列表直接置顶 */
+.start-btn.secondary {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+/* --- 右侧聊天区 (30%) --- */
 .chat-section {
     flex: 3;
     background: white;
     display: flex;
     flex-direction: column;
     border-left: 1px solid #ddd;
-    overflow: hidden; /* 关键：防止内容溢出容器 */
+    height: 100vh; /* 确保聊天区高度撑满 */
 }
 
 .chat-messages {
@@ -60,4 +126,36 @@
     overflow-y: auto;
     padding: 20px;
     background: #fafafa;
+}
+
+/* 消息气泡样式保持原样... */
+.message { margin-bottom: 20px; display: flex; flex-direction: column; }
+.message-content { max-width: 85%; padding: 12px 16px; border-radius: 15px; font-size: 15px; line-height: 1.6; white-space: pre-wrap; }
+.bot-message .message-content { background: #e9e9eb; color: #333; align-self: flex-start; border-bottom-left-radius: 2px; }
+.user-message .message-content { background: #007bff; color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+
+/* 输入区 */
+.chat-input-area {
+    padding: 20px;
+    border-top: 1px solid #eee;
+    display: flex;
+    gap: 10px;
+    background: white;
+}
+
+textarea { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 10px; resize: none; outline: none; }
+.send-btn { background: #007bff; color: white; border: none; padding: 0 20px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+
+/* 加载遮罩样式 */
+.loading-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.7); z-index: 9999; display: none; flex-direction: column; justify-content: center; align-items: center; }
+.loading-overlay.active { display: flex; }
+.loading-spinner { width: 45px; height: 45px; border: 4px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-overlay p { color: white; margin-top: 15px; }
+
+/* 响应式适配：此处暂保持原样，下一轮我们专门修复手机端的问题 */
+@media (max-width: 1024px) {
+    .container { flex-direction: column; }
+    .video-section { flex: none; height: 50vh; }
+    .chat-section { flex: 1; }
 }
