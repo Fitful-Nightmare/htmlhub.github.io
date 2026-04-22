@@ -24,38 +24,15 @@ body {
     background: #000;
     display: flex;
     flex-direction: column;
-    /* 修改点 4: 调整 padding，顶部设为 0 以便返回按钮贴顶 */
-    padding: 0 15px 15px 15px; 
+    padding: 15px;
     position: relative;
 }
 
-/* 修改点 5: 新增顶部控制栏样式 */
-.top-controls {
-    height: 50px;
-    display: flex;
-    align-items: center;
-    background: #000;
+.video-header {
+    padding: 10px 0 20px 0;
+    color: white;
+    text-align: center;
 }
-
-/* 修改点 6: 新增返回按钮样式（小字体、简洁设计） */
-.back-btn {
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    color: rgba(255, 255, 255, 0.8);
-    padding: 4px 12px;
-    font-size: 13px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.back-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-    border-color: #fff;
-}
-
-/* 修改点 7: 移除了 .video-header 相关样式，确保不占位 */
 
 .video-container {
     flex: 1;
@@ -125,12 +102,6 @@ video {
     transform: scale(1.05);
 }
 
-/* 进度条 */
-.video-info { padding-top: 15px; color: #fff; }
-.progress-bar { height: 4px; background: #333; border-radius: 2px; margin-bottom: 8px; }
-.progress-fill { height: 100%; background: #007bff; width: 0%; transition: width 0.3s; }
-.video-stats { font-size: 12px; display: flex; justify-content: flex-end; }
-
 /* --- 右侧聊天区 (30%) --- */
 .chat-section {
     flex: 3;
@@ -140,7 +111,16 @@ video {
     border-left: 1px solid #ddd;
 }
 
-/* 修改点 8: 移除了 .chat-header 相关样式 */
+.chat-header {
+    padding: 20px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.avatar { font-size: 30px; }
+.status-tag { font-size: 12px; color: #52c41a; background: #f6ffed; border: 1px solid #b7eb8f; padding: 2px 8px; border-radius: 10px; }
 
 .chat-messages {
     flex: 1;
@@ -208,16 +188,21 @@ textarea {
     gap: 5px;
 }
 
-/* 加载遮罩 */
+/* --- 全屏加载遮罩 (修复关键) --- */
 .loading-overlay {
     position: fixed;
-    top: 0; left: 0; width: 100vw; height: 100vh;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
     background: rgba(0, 0, 0, 0.7);
     z-index: 9999;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
+    
+    /* 默认隐藏 */
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -231,7 +216,8 @@ textarea {
 }
 
 .loading-spinner {
-    width: 45px; height: 45px;
+    width: 45px;
+    height: 45px;
     border: 4px solid rgba(255,255,255,0.3);
     border-top-color: #fff;
     border-radius: 50%;
@@ -243,7 +229,7 @@ textarea {
 
 .loading-overlay p { color: white; font-size: 14px; }
 
-/* 响应式适配（暂保持旧版逻辑，下一阶段再专门优化） */
+/* 响应式适配 */
 @media (max-width: 1024px) {
     .container { flex-direction: column; }
     .video-section { flex: none; height: 50vh; }
